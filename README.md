@@ -1,2 +1,2 @@
-# HumannwRapper
-A wRapper for HUMAnN (HMP Unified Metabolic Analysis Network)
+# PathwayAbundanceFinder
+A short wrappper for finding presence/absence/abundance of pathways from metagenomic data.
