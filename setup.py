@@ -13,5 +13,5 @@ setup(
     author_email='patil.ashwini1091@gmail.com',
     url='https://github.com/PennChopMicrobiomeProgram',
     packages=['pathfinderlib'],
-    scripts=['scripts/pathfinder.py'],
+    scripts=['pathfinder.py'],
     )
