@@ -2,72 +2,95 @@ import subprocess
 import os
 import tempfile
 import argparse
+import json
 
+from pathfinderlib.version import __version__
 #path to humann
-path = "/home/ashwini/ash/other_softwares/humann/"
 
-def run_command(command, error_message):
-    try:
-        subprocess.check_call(command, shell=True)
-    except subprocess.CalledProcessError as e:
-        print error_message
-
-def check_file_exists_or_die(file_name):
-    if not os.path.isfile(file_name):
-        print "ERROR: file " + file_name + " does not exist: check the file name and path."
-        sys.exit(1)
+default_config ={
+    "humann_fp": "/home/ashwini/ash/other_softwares/humann/",
+    "kegg_fp": "/home/ashwini/ash/kegg/kegg"
+    }
         
-def get_args(argv):
-    parser = argparse.ArgumentParser(description="Runs Humann.")
-    parser.add_argument("--R1", required=True,
-                        type=argparse.FileType("r"),
-                        help="R1.fastq")
-    parser.add_argument("--R2", required=True,
-                        type=argparse.FileType("r"),
-                        help="R2.fastq")
-    parser.add_argument("--output", required=True,
-                        type=str,
-                        help="output file")
-    args = parser.parse_args(argv)
-    check_file_exists_or_die(args.R1.name)
-    check_file_exists_or_die(args.R2.name)
-    args.R1.close()
-    args.R2.close()
-    return(args)
                                 
-                            
-def fastq_to_fasta(filename):
-    fasta = tempfile.NamedTemporaryFile(delete=False)
-    command = ("seqtk seq -a  " + filename + " > " + fasta.name)
-    run_command(command, "cannot run seqtk for blat.")
-    return fasta.name
+class Humann(object):
+    def __init__(self, config):
+        self.config = config
 
-def create_input_files_for_humann(R1, R2, output):
-    r1_fasta = fastq_to_fasta(R1)
-    r2_fasta = fastq_to_fasta(R2)
-    command_r1 = ("blastx -outfmt 6 -db ~/ash/kegg/kegg " +
-                  "-query " + r1_fasta +
-                  " -out " + path + "input/" + output + "_R1.txt")
-    run_command(command_r1, "Cannot run blastx on " + R1 + " . Check input files.")
+    def make_fastq_to_fasta_command(self, filename):
+        return [
+            "seqtk",
+            "seq", "-a",
+            filename
+            ]
 
-    command_r2 = ("blastx -outfmt 6 -db ~/ash/kegg/kegg " +
-                  "-query " + r2_fasta +
-                  " -out " + path + "input/" + output + "_R2.txt")
-    run_command(command_r2, "Cannot run blastx on " + R2 + " . Check input files.")
-    os.remove(r1_fasta)
-    os.remove(r2_fasta)
-    
-def run_humann():
-    os.chdir(path)
-    command = ("scons")
-    run_command(command, "Cannot run scons. check SConstruct file.")
+    def fastq_to_fasta(self, filename):
+        fasta = tempfile.NamedTemporaryFile(delete=False)
+        command = self.make_fastq_to_fasta_command(filename)
+        subprocess.check_call(command, stdout=fasta, stderr=subprocess.STDOUT)
+        return fasta.name
 
+    def make_blastx_command(self, R, rex, output):
+        out_dir = os.path.join(self.config["humann_fp"], "input", output + rex)
+        return [
+            "blastx", "-outfmt", "6",
+            "-db", self.config["kegg_fp"],
+            "-query", R, "-out", out_dir
+            ]
+
+    def run_blastx(self, R, rex, output):
+        r_fasta = self.fastq_to_fasta(R)
+        command = self.make_blastx_command(r_fasta, rex, out_dir)
+        subprocess.check_call(command, stderr=subprocess.STDOUT)
+        os.remove(r_fasta)
+        
+    def run(self, R1, R2, output):
+        self.run_blastx(R1,"_R1.txt", output)
+        self.run_blastx(R2, "_R2.txt", output)
+        os.chdir(self.config["humann_fp"])
+        subprocess.check_call("scons", stderr=subprocess.STDOUT)
+        
 def main(argv=None):
-    args = get_args(argv)
-    create_input_files_for_humann(args.R1.name, args.R2.name, args.output)
-    run_humann()
-    
+    parser = argparse.ArgumentParser(description="Runs Humann.")
+    parser.add_argument(
+        "--forward-reads", required=True,
+        type=argparse.FileType("r"),
+        help="R1.fastq")
+    parser.add_argument(
+        "--reverse-reads", required=True,
+        type=argparse.FileType("r"),
+        help="R2.fastq")
+    parser.add_argument(
+        "--summary-file", required=True,
+        type=argparse.FileType("w"),
+        help="Summary file")
+    parser.add_argument(
+        "--output-file", required=True,
+        help="output file")
+    parser.add_argument(
+        "--config-file",
+        type=argparse.FileType("r"),
+        help="JSON configuration file")
+    args = parser.parse_args(argv)
 
-if __name__=="__main__":
-    main()
-    
+    config = default_config.copy()
+    if args.config_file:
+        user_config = json.load(args.config_file)
+        config.update(user_config)
+
+    fwd_fp = args.forward_reads.name
+    rev_fp = args.reverse_reads.name
+    args.forward_reads.close()
+    args.reverse_reads.close()
+
+    app = Humann(config)
+    app.run(fwd_fp, rev_fp, args.output_file)
+    save_summary(args.summary_file, config)
+
+def save_summary(f, config):
+    result = {
+        "program": "PathFinder",
+        "version": __version__,
+        "config": config
+        }
+    json.dump(result, f)    
