@@ -21,7 +21,7 @@ default_config ={
     "num_threads":4
     }
 
-class Allignment(object):
+class Alignment(object):
     def __init__(self, config):
         self.config = config
 
@@ -49,23 +49,23 @@ class Allignment(object):
         os.remove(r_fasta)
         return output_fp
 
-class Blast(Allignment):
+class Blast(Alignment):
    def __init__(self, config):
-       Allignment.__init__(self, config)
+       Alignment.__init__(self, config)
 
    def make_output_fp(self, out_dir, R):
        return os.path.join(out_dir, os.path.basename(os.path.splitext(R)[0]+'.blast'))
             
    def make_command(self, R, output_fp):
        return [
-           "blastx", "-outfmt", "6", "-num_threads", self.config["num_threads"],
+           "blastx", "-outfmt", "6", "-num_threads", str(self.config["num_threads"]),
            "-db", self.config["kegg_fp"],
            "-query", R, "-out", output_fp
            ]
 
-class RapSearch(Allignment):
+class RapSearch(Alignment):
     def __init__(self, config):
-        Allignment.__init__(self, config)
+        Alignment.__init__(self, config)
 
     def run_prerapsearch(self):
         cmd = [
@@ -84,7 +84,7 @@ class RapSearch(Allignment):
             self.config["rap_search_fp"], "-q", R,
             "-d", self.config["kegg_idx_fp"],
             "-o", output_fp,
-            "-z", self.config["num_threads"], "-s", "f"
+            "-z", str(self.config["num_threads"]), "-s", "f"
             ]
 
 class Assignment(object):
@@ -95,31 +95,31 @@ class Humann(Assignment):
     def __init__(self, config):
         Assignment.__init__(self, config)
 
-    def run(self, allignment):
-        ## instead of assuming they are in the correct folder, softlink the allignment file to humann/input
+    def run(self, alignment):
+        ## instead of assuming they are in the correct folder, softlink the alignment file to humann/input
         ## return os.path.join(self.config["humann_fp"], "input", out_dir) ##### softlink this!
         ## currently only works with blast
         os.chdir(self.config["humann_fp"])
         subprocess.check_call("scons", stderr=subprocess.STDOUT)
 
-    def fix_allignment_result(self, allignment):
+    def fix_alignment_result(self, alignment):
         pass ##RAPsearch has 4 headerlines that humann doesn't seem to like...
 
-    def parseResults(allignment):
+    def parseResults(alignment):
         pass ## to implement later if we would like to pass the results to the summary file
     
 class BestHit(Assignment):
     def __init__(self, config):
         Assignment.__init__(self, config)
 
-    def _parseResults(self, allignment):
-        idx = allignment.groupby('# Fields: Query').apply(lambda g: g['e-value'].idxmin())
-        bestAllignment = allignment.ix[idx, ['# Fields: Query', 'Subject', 'identity', 'e-value']]
-        bestAllignment = bestAllignment[bestAllignment['e-value']<self.config["evalue_cutoff"]] ## change it to the filter command here
-        return bestAllignment #.set_index('# Fields: Query')
+    def _parseResults(self, alignment):
+        idx = alignment.groupby('# Fields: Query').apply(lambda g: g['e-value'].idxmin())
+        bestAlignment = alignment.ix[idx, ['# Fields: Query', 'Subject', 'identity', 'e-value']]
+        bestAlignment = bestAlignment[bestAlignment['e-value']<self.config["evalue_cutoff"]] ## change it to the filter command here
+        return bestAlignment #.set_index('# Fields: Query')
     
-    def _map2ko(self, allignment, kegg2ko):
-        hitCounts = kegg2ko.merge(allignment, on='Subject')
+    def _map2ko(self, alignment, kegg2ko):
+        hitCounts = kegg2ko.merge(alignment, on='Subject')
         hitCounts['ko_abundance'] = hitCounts['Count_hit'] / hitCounts['Count_ko']
         return hitCounts.groupby('KO').apply(lambda g: g['ko_abundance'].sum())
     
@@ -140,20 +140,20 @@ class BestHit(Assignment):
         kegg2ko = pandas.read_csv(self.config['kegg_to_ko_fp'], sep='\t', header=None, names=['Subject', 'KO'])
         return kegg2ko.merge(self._getCount(kegg2ko, 'Subject', 'Count_ko'), on='Subject')
         
-    def _assign_ko(self, allignment_fp):
+    def _assign_ko(self, alignment_fp):
         kegg2ko = self._load_kegg2ko()
         
         # read the alignent results (RAPsearch for now) and count
         ## currently only works with Rapsearch
         #alignment = pandas.read_csv(blastResults_fp, sep='\t', header=None, names=rapResults.columns) # for reading blast. kind of..
-        allignment = pandas.read_csv(allignment_fp, sep='\t', skiprows=4, header=0)
-        bestAllignment = self._parseResults(allignment)
-        numHits = self._getCount(bestAllignment, 'Subject', 'Count_hit')
+        alignment = pandas.read_csv(alignment_fp, sep='\t', skiprows=4, header=0)
+        bestAlignment = self._parseResults(alignment)
+        numHits = self._getCount(bestAlignment, 'Subject', 'Count_hit')
         # merge and count
         return self._map2ko(numHits, kegg2ko)
 
-    def run(self, allignment_fp):
-        ko_count = self._assign_ko(allignment_fp)
+    def run(self, alignment_fp):
+        ko_count = self._assign_ko(alignment_fp)
         print(ko_count)
 
         #path_count = self._assign_pathway(ko_count) # not yet implemented
@@ -201,21 +201,21 @@ def main(argv=None):
         searchApp = Blast(config)
     else:
         searchApp = RapSearch(config)
-    allignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
-    allignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
+    alignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
+    alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
 
-    #allignment_R1_fp = '/home/tanesc/data/rapTemp_'
+    #alignment_R1_fp = '/home/tanesc/data/rapTemp_'
     #config['kegg_to_ko_fp'] = '/home/tanesc/data/kegg2ko_'
 
     if config['mapping_method'].lower() == 'humann':
         assignerApp = Humann(config)
     else:
         assignerApp = BestHit(config)
-        allignment_R1_fp += '.m8'
-        allignment_R2_fp += '.m8'
+        alignment_R1_fp += '.m8'
+        alignment_R2_fp += '.m8'
 
-    summary_R1 = assignerApp.run(allignment_R1_fp)
-    summary_R2 = assignerApp.run(allignment_R2_fp)
+    summary_R1 = assignerApp.run(alignment_R1_fp)
+    summary_R2 = assignerApp.run(alignment_R2_fp)
     
     #save_summary(args.summary_file, config, data)
 
