@@ -16,7 +16,9 @@ default_config ={
     "kegg_idx_fp":"",
     "rap_search_fp": "",
     "search_method":"RAPsearch", # RAPsearch or blastx
-    "mapping_method":"best_hit" # best_hit or humann
+    "mapping_method":"best_hit", # best_hit or humann
+    "evalue_cutoff":0.001,
+    "num_threads":4
     }
 
 class Allignment(object):
@@ -56,7 +58,7 @@ class Blast(Allignment):
             
    def make_command(self, R, output_fp):
        return [
-           "blastx", "-outfmt", "6", "-num_threads", "6",
+           "blastx", "-outfmt", "6", "-num_threads", self.config["num_threads"],
            "-db", self.config["kegg_fp"],
            "-query", R, "-out", output_fp
            ]
@@ -69,7 +71,7 @@ class RapSearch(Allignment):
         cmd = [
             os.path.join(os.path.dirname(self.config["rap_search_fp"]),'prerapsearch'),
             "-d", self.config["kegg_fp"],
-            "-n", os.path.join(os.path.dirname(os.path.dirname(self.config['kegg_fp'])), 'keggRAP')
+            "-n", os.path.join(os.path.basename(os.path.dirname(self.config['kegg_fp'])), 'keggRAP')
             ]
         subprocess.check_call(cmd, stderr=subprocess.STDOUT)
         #### update the config file of the object?? maybe put this method in main??
@@ -82,7 +84,7 @@ class RapSearch(Allignment):
             self.config["rap_search_fp"], "-q", R,
             "-d", self.config["kegg_idx_fp"],
             "-o", output_fp,
-            "-z", "4", "-s", "f"
+            "-z", self.config["num_threads"], "-s", "f"
             ]
 
 class Assignment(object):
@@ -110,10 +112,10 @@ class BestHit(Assignment):
     def __init__(self, config):
         Assignment.__init__(self, config)
 
-    def _parseResults(self, allignment, evalue=0.001):
+    def _parseResults(self, allignment):
         idx = allignment.groupby('# Fields: Query').apply(lambda g: g['e-value'].idxmin())
         bestAllignment = allignment.ix[idx, ['# Fields: Query', 'Subject', 'identity', 'e-value']]
-        bestAllignment = bestAllignment[bestAllignment['e-value']<evalue] ## change it to the filter command here
+        bestAllignment = bestAllignment[bestAllignment['e-value']<self.config["evalue_cutoff"]] ## change it to the filter command here
         return bestAllignment #.set_index('# Fields: Query')
     
     def _map2ko(self, allignment, kegg2ko):
