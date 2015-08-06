@@ -33,10 +33,10 @@ class Alignment(object):
             ]
     
     def fastq_to_fasta(self, filename):
-        fasta = tempfile.NamedTemporaryFile(delete=False)
+        fasta = tempfile.NamedTemporaryFile()
         command = self._make_fastq_to_fasta_command(filename)
         subprocess.check_call(command, stdout=fasta, stderr=subprocess.STDOUT)
-        return fasta.name
+        return fasta
 
     def make_command(self, R, output):
         raise NotImplementedError("Create and override method in child tool")
@@ -44,9 +44,8 @@ class Alignment(object):
     def run(self, R, out_dir):
         r_fasta = self.fastq_to_fasta(R)
         output_fp = self.make_output_fp(out_dir, R)
-        command = self.make_command(r_fasta, output_fp)
+        command = self.make_command(r_fasta.name, output_fp)
         subprocess.check_call(command, stderr=subprocess.STDOUT)
-        os.remove(r_fasta)
         return output_fp
 
 class Blast(Alignment):
@@ -115,8 +114,7 @@ class BestHit(Assignment):
     def _parseResults(self, alignment):
         idx = alignment.groupby('# Fields: Query').apply(lambda g: g['e-value'].idxmin())
         bestAlignment = alignment.ix[idx, ['# Fields: Query', 'Subject', 'identity', 'e-value']]
-        bestAlignment = bestAlignment[bestAlignment['e-value']<self.config["evalue_cutoff"]] ## change it to the filter command here
-        return bestAlignment #.set_index('# Fields: Query')
+        return bestAlignment[bestAlignment['e-value']<self.config["evalue_cutoff"]]
     
     def _map2ko(self, alignment, kegg2ko):
         hitCounts = kegg2ko.merge(alignment, on='Subject')
@@ -133,7 +131,7 @@ class BestHit(Assignment):
             for ko in kegg_db:
                 id_split = re.split(';', ko.description)
                 id_split = [_.strip() for _ in id_split]
-                [f_out.write('\t'.join([ko.id, a])+'\n') for a in id_split if a.startswith('K0')]
+                [f_out.write('\t'.join([ko.id, _])+'\n') for _ in id_split if _.startswith('K0')]
         ##modify the config and update kegg_to_ko_fp
 
     def _load_kegg2ko(self):
@@ -151,6 +149,9 @@ class BestHit(Assignment):
         numHits = self._getCount(bestAlignment, 'Subject', 'Count_hit')
         # merge and count
         return self._map2ko(numHits, kegg2ko)
+
+    def _assign_pathway(self, ko_assign):
+        raise NotImplementedError("Create and override method in child tool")
 
     def run(self, alignment_fp):
         ko_count = self._assign_ko(alignment_fp)
