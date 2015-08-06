@@ -62,18 +62,15 @@ class Blast(Alignment):
            "-query", R, "-out", output_fp
            ]
 
+   def make_index(self):
+       raise IOError("Protein fasta file  can't be found. Please check kegg_fp in the config file")
+
+   def index_exists(self):
+       return os.path.exists(self.config["kegg_fp"])
+
 class RapSearch(Alignment):
     def __init__(self, config):
         Alignment.__init__(self, config)
-
-    def run_prerapsearch(self):
-        cmd = [
-            os.path.join(os.path.dirname(self.config["rap_search_fp"]),'prerapsearch'),
-            "-d", self.config["kegg_fp"],
-            "-n", os.path.join(os.path.basename(os.path.dirname(self.config['kegg_fp'])), 'keggRAP')
-            ]
-        subprocess.check_call(cmd, stderr=subprocess.STDOUT)
-        #### update the config file of the object?? maybe put this method in main??
 
     def make_output_fp(self, out_dir, R):
         return os.path.join(out_dir, os.path.basename(os.path.splitext(R)[0]))
@@ -85,6 +82,17 @@ class RapSearch(Alignment):
             "-o", output_fp,
             "-z", str(self.config["num_threads"]), "-s", "f"
             ]
+
+    def make_index(self):
+        cmd = [
+            os.path.join(os.path.dirname(self.config["rap_search_fp"]),'prerapsearch'),
+            "-d", self.config["kegg_fp"],
+            "-n", self.config["kegg_index_fp"]
+            ]
+        subprocess.check_call(cmd, stderr=subprocess.STDOUT)
+
+    def index_exists(self):
+        return os.path.exists(self.config["kegg_index_fp"])
 
 class Assignment(object):
     def __init__(self, config):
@@ -106,11 +114,24 @@ class Humann(Assignment):
 
     def parseResults(alignment):
         pass ## to implement later if we would like to pass the results to the summary file
-    
+
+    def make_index(self):
+        pass
+
+    def index_exists(self):
+        return True
+        
 class BestHit(Assignment):
     def __init__(self, config):
         Assignment.__init__(self, config)
+        
+    def _getCount(self, df, group_key, count_key):
+        return df.groupby(group_key).size().to_frame(name=count_key).reset_index()
 
+    def _load_kegg2ko(self):
+        kegg2ko = pandas.read_csv(self.config['kegg_to_ko_fp'], sep='\t', header=None, names=['Subject', 'KO'])
+        return kegg2ko.merge(self._getCount(kegg2ko, 'Subject', 'Count_ko'), on='Subject')
+            
     def _parseResults(self, alignment):
         idx = alignment.groupby('# Fields: Query').apply(lambda g: g['e-value'].idxmin())
         bestAlignment = alignment.ix[idx, ['# Fields: Query', 'Subject', 'identity', 'e-value']]
@@ -121,23 +142,6 @@ class BestHit(Assignment):
         hitCounts['ko_abundance'] = hitCounts['Count_hit'] / hitCounts['Count_ko']
         return hitCounts.groupby('KO').apply(lambda g: g['ko_abundance'].sum())
     
-    def _getCount(self, df, group_key, count_key):
-        return df.groupby(group_key).size().to_frame(name=count_key).reset_index()
-
-    def make_kegg2ko(self): ## incorporate this method into the workflow
-        out_fp = os.path.join(os.path.dirname(self.config['kegg_fp']), 'kegg2ko') 
-        kegg_db = SeqIO.parse(open(self.config['kegg_fp']), 'fasta')
-        with open(out_fp, 'w') as f_out:
-            for ko in kegg_db:
-                id_split = re.split(';', ko.description)
-                id_split = [_.strip() for _ in id_split]
-                [f_out.write('\t'.join([ko.id, _])+'\n') for _ in id_split if _.startswith('K0')]
-        ##modify the config and update kegg_to_ko_fp
-
-    def _load_kegg2ko(self):
-        kegg2ko = pandas.read_csv(self.config['kegg_to_ko_fp'], sep='\t', header=None, names=['Subject', 'KO'])
-        return kegg2ko.merge(self._getCount(kegg2ko, 'Subject', 'Count_ko'), on='Subject')
-        
     def _assign_ko(self, alignment_fp):
         kegg2ko = self._load_kegg2ko()
         
@@ -160,7 +164,17 @@ class BestHit(Assignment):
         #path_count = self._assign_pathway(ko_count) # not yet implemented
         
         return "Assigner run" ## return results as a dictionary so they can be written to json file 
-        
+
+    def make_index(self):
+        kegg_db = SeqIO.parse(open(self.config['kegg_fp']), 'fasta')
+        with open(self.config['kegg_to_ko_fp'], 'w') as f_out:
+            for ko in kegg_db:
+                id_split = re.split(';', ko.description)
+                id_split = [_.strip() for _ in id_split]
+                [f_out.write('\t'.join([ko.id, _])+'\n') for _ in id_split if _.startswith('K0')]
+
+    def index_exists(self):
+        return os.path.exists(self.config['kegg_to_ko_fp'])
         
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Runs Humann.")
@@ -228,3 +242,24 @@ def save_summary(f, config, data):
         "data":data
         }
     json.dump(result, f)    
+
+def make_index_main(argv=None):
+    p = argparse.ArgumentParser()
+    p.add_argument(
+        "--config-file",
+        type=argparse.FileType("r"),
+        help="JSON configuration file")
+    args = p.parse_args(argv)
+    
+    config = default_config.copy()
+    if args.config_file:
+        user_config = json.load(args.config_file)
+        config.update(user_config)
+        
+    searchApp = Alignment(config)
+    if not searchApp.index_exists():
+        searchApp.make_index()
+
+    assignerApp = Assignment(config)
+    if not assignerApp.index_exists():
+        assignerApp.make_index()
