@@ -2,6 +2,7 @@ import subprocess
 import os
 import tempfile
 import argparse
+import inspect
 import json
 import re
 import pandas
@@ -14,16 +15,35 @@ default_config ={
     "humann_fp": "/home/ashwini/ash/other_softwares/humann/",
     "kegg_fp": "/home/ashwini/ash/kegg/kegg",
     "kegg_idx_fp":"",
+    "kegg_to_ko_fp":"",
     "rap_search_fp": "",
-    "search_method":"RAPsearch", # RAPsearch or blastx
+    "search_method":"rapsearch", # rapsearch or blastx
     "mapping_method":"best_hit", # best_hit or humann
     "evalue_cutoff":0.001,
     "num_threads":4
     }
 
-class Alignment(object):
-    def __init__(self, config):
-        self.config = config
+def returnObject(tool_cls, config):
+    # Proceed stepwise here to improve quality of error messages.
+    tool_args = []
+    for argname in tool_cls.get_argnames():
+        arg = config[argname]
+        tool_args.append(arg)
+    return tool_cls(*tool_args)
+
+def Alignment(config):
+    tool_cls = search_methods_available[config["search_method"]]
+    return returnObject(tool_cls, config)
+
+class _Alignment(object):
+    def __init__(self, search_method, kegg_fp, num_threads):
+        self.search_method = search_method
+        self.kegg_fp = kegg_fp
+        self.num_threads = num_threads
+
+    @classmethod
+    def get_argnames(cls):
+        return inspect.getargspec(cls.__init__)[0][1:]
 
     def _make_fastq_to_fasta_command(self, filename):
         return [
@@ -48,17 +68,17 @@ class Alignment(object):
         subprocess.check_call(command, stderr=subprocess.STDOUT)
         return output_fp
 
-class Blast(Alignment):
-   def __init__(self, config):
-       Alignment.__init__(self, config)
+class Blast(_Alignment):
+   def __init__(self, search_method, kegg_fp, num_threads):
+       super(Blast, self).__init__(search_method, kegg_fp, evalue_cutoff, num_threads)
 
    def make_output_fp(self, out_dir, R):
        return os.path.join(out_dir, os.path.basename(os.path.splitext(R)[0]+'.blast'))
             
    def make_command(self, R, output_fp):
        return [
-           "blastx", "-outfmt", "6", "-num_threads", str(self.config["num_threads"]),
-           "-db", self.config["kegg_fp"],
+           "blastx", "-outfmt", "6", "-num_threads", str(self.num_threads),
+           "-db", self.kegg_fp,
            "-query", R, "-out", output_fp
            ]
 
@@ -66,47 +86,60 @@ class Blast(Alignment):
        raise IOError("Protein fasta file  can't be found. Please check kegg_fp in the config file")
 
    def index_exists(self):
-       return os.path.exists(self.config["kegg_fp"])
+       return os.path.exists(self.kegg_fp)
 
-class RapSearch(Alignment):
-    def __init__(self, config):
-        Alignment.__init__(self, config)
+class RapSearch(_Alignment):
+    def __init__(self, search_method, kegg_fp, num_threads, kegg_idx_fp, rap_search_fp):
+        super(RapSearch, self).__init__(search_method, kegg_fp, num_threads)
+        self.kegg_idx_fp = kegg_idx_fp
+        self.rap_search_fp = rap_search_fp
 
     def make_output_fp(self, out_dir, R):
         return os.path.join(out_dir, os.path.basename(os.path.splitext(R)[0]))
                 
     def make_command(self, R, output_fp):
         return [
-            self.config["rap_search_fp"], "-q", R,
-            "-d", self.config["kegg_idx_fp"],
+            self.rap_search_fp, "-q", R,
+            "-d", self.kegg_idx_fp,
             "-o", output_fp,
-            "-z", str(self.config["num_threads"]), "-s", "f"
+            "-z", str(self.num_threads), "-s", "f"
             ]
 
     def make_index(self):
         cmd = [
-            os.path.join(os.path.dirname(self.config["rap_search_fp"]),'prerapsearch'),
-            "-d", self.config["kegg_fp"],
-            "-n", self.config["kegg_index_fp"]
+            os.path.join(os.path.dirname(self.rap_search_fp),'prerapsearch'),
+            "-d", self.kegg_fp,
+            "-n", self.kegg_index_fp
             ]
         subprocess.check_call(cmd, stderr=subprocess.STDOUT)
 
     def index_exists(self):
-        return os.path.exists(self.config["kegg_index_fp"])
+        return os.path.exists(self.kegg_index_fp)
 
-class Assignment(object):
-    def __init__(self, config):
-        self.config = config
-        
-class Humann(Assignment):
-    def __init__(self, config):
-        Assignment.__init__(self, config)
+
+def Assignment(config):
+    tool_cls = mapping_methods_available[config["mapping_method"]]
+    return returnObject(tool_cls, config)
+
+class _Assignment(object):
+    def __init__(self, mapping_method, evalue_cutoff):
+        self.mapping_method = mapping_method
+        self.evalue_cutoff = evalue_cutoff
+
+    @classmethod
+    def get_argnames(cls):
+        return inspect.getargspec(cls.__init__)[0][1:]
+
+class Humann(_Assignment):
+    def __init__(self, mapping_method, evalue_cutoff, humann_fp):
+        super(Humann, self).__init__(mapping_method, evalue_cutoff)
+        self.humann_fp = humann_fp
 
     def run(self, alignment):
         ## instead of assuming they are in the correct folder, softlink the alignment file to humann/input
         ## return os.path.join(self.config["humann_fp"], "input", out_dir) ##### softlink this!
         ## currently only works with blast
-        os.chdir(self.config["humann_fp"])
+        os.chdir(self.humann_fp)
         subprocess.check_call("scons", stderr=subprocess.STDOUT)
 
     def fix_alignment_result(self, alignment):
@@ -121,21 +154,23 @@ class Humann(Assignment):
     def index_exists(self):
         return True
         
-class BestHit(Assignment):
-    def __init__(self, config):
-        Assignment.__init__(self, config)
+class BestHit(_Assignment):
+    def __init__(self, mapping_method, evalue_cutoff, kegg_fp, kegg_to_ko_fp):
+        super(BestHit, self).__init__(mapping_method, evalue_cutoff)
+        self.kegg_fp = kegg_fp
+        self.kegg_to_ko_fp = kegg_to_ko_fp
         
     def _getCount(self, df, group_key, count_key):
         return df.groupby(group_key).size().to_frame(name=count_key).reset_index()
 
     def _load_kegg2ko(self):
-        kegg2ko = pandas.read_csv(self.config['kegg_to_ko_fp'], sep='\t', header=None, names=['Subject', 'KO'])
+        kegg2ko = pandas.read_csv(self.kegg_to_ko_fp, sep='\t', header=None, names=['Subject', 'KO'])
         return kegg2ko.merge(self._getCount(kegg2ko, 'Subject', 'Count_ko'), on='Subject')
             
     def _parseResults(self, alignment):
         idx = alignment.groupby('# Fields: Query').apply(lambda g: g['e-value'].idxmin())
         bestAlignment = alignment.ix[idx, ['# Fields: Query', 'Subject', 'identity', 'e-value']]
-        return bestAlignment[bestAlignment['e-value']<self.config["evalue_cutoff"]]
+        return bestAlignment[bestAlignment['e-value']<self.evalue_cutoff]
     
     def _map2ko(self, alignment, kegg2ko):
         hitCounts = kegg2ko.merge(alignment, on='Subject')
@@ -159,25 +194,24 @@ class BestHit(Assignment):
 
     def run(self, alignment_fp):
         ko_count = self._assign_ko(alignment_fp)
-        print(ko_count)
 
         #path_count = self._assign_pathway(ko_count) # not yet implemented
         
         return "Assigner run" ## return results as a dictionary so they can be written to json file 
 
     def make_index(self):
-        kegg_db = SeqIO.parse(open(self.config['kegg_fp']), 'fasta')
-        with open(self.config['kegg_to_ko_fp'], 'w') as f_out:
+        kegg_db = SeqIO.parse(open(self.kegg_fp), 'fasta')
+        with open(self.kegg_to_ko_fp, 'w') as f_out:
             for ko in kegg_db:
                 id_split = re.split(';', ko.description)
                 id_split = [_.strip() for _ in id_split]
                 [f_out.write('\t'.join([ko.id, _])+'\n') for _ in id_split if _.startswith('K0')]
 
     def index_exists(self):
-        return os.path.exists(self.config['kegg_to_ko_fp'])
+        return os.path.exists(self.kegg_to_ko_fp)
         
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Runs Humann.")
+    parser = argparse.ArgumentParser(description="Runs functional assignment.")
     parser.add_argument(
         "--forward-reads", required=True,
         type=argparse.FileType("r"),
@@ -212,23 +246,18 @@ def main(argv=None):
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
 
-    if config['search_method'].lower() == 'blastx':
-        searchApp = Blast(config)
-    else:
-        searchApp = RapSearch(config)
+    searchApp = Alignment(config)
     alignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
     alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
 
-    #alignment_R1_fp = '/home/tanesc/data/rapTemp_'
-    #config['kegg_to_ko_fp'] = '/home/tanesc/data/kegg2ko_'
+    ##### find a graceful way of doing this
+    alignment_R1_fp += '.m8'
+    alignment_R2_fp += '.m8'
 
-    if config['mapping_method'].lower() == 'humann':
-        assignerApp = Humann(config)
-    else:
-        assignerApp = BestHit(config)
-        alignment_R1_fp += '.m8'
-        alignment_R2_fp += '.m8'
+    config['kegg_to_ko_fp'] = '/home/tanesc/data/kegg2ko_'
+    alignment_R1_fp = '/home/tanesc/data/rapTemp_'
 
+    assignerApp = Assignment(config)
     summary_R1 = assignerApp.run(alignment_R1_fp)
     summary_R2 = assignerApp.run(alignment_R2_fp)
     
@@ -241,7 +270,7 @@ def save_summary(f, config, data):
         "config": config,
         "data":data
         }
-    json.dump(result, f)    
+    json.dump(result, f)
 
 def make_index_main(argv=None):
     p = argparse.ArgumentParser()
@@ -263,3 +292,14 @@ def make_index_main(argv=None):
     assignerApp = Assignment(config)
     if not assignerApp.index_exists():
         assignerApp.make_index()
+
+
+search_methods_available = {
+    "blastx": Blast,
+    "rapsearch": RapSearch
+    }
+
+mapping_methods_available = {
+    "best_hit": BestHit,
+    "humann": Humann
+    }
