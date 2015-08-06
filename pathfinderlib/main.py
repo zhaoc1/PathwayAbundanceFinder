@@ -122,8 +122,9 @@ def Assignment(config):
     return returnObject(tool_cls, config)
 
 class _Assignment(object):
-    def __init__(self, mapping_method, evalue_cutoff):
+    def __init__(self, mapping_method, search_method, evalue_cutoff):
         self.mapping_method = mapping_method
+        self.search_method = search_method
         self.evalue_cutoff = evalue_cutoff
 
     @classmethod
@@ -131,8 +132,8 @@ class _Assignment(object):
         return inspect.getargspec(cls.__init__)[0][1:]
 
 class Humann(_Assignment):
-    def __init__(self, mapping_method, evalue_cutoff, humann_fp):
-        super(Humann, self).__init__(mapping_method, evalue_cutoff)
+    def __init__(self, mapping_method, search_method, evalue_cutoff, humann_fp):
+        super(Humann, self).__init__(mapping_method, search_method, evalue_cutoff)
         self.humann_fp = humann_fp
 
     def run(self, alignment):
@@ -143,6 +144,7 @@ class Humann(_Assignment):
         subprocess.check_call("scons", stderr=subprocess.STDOUT)
 
     def fix_alignment_result(self, alignment):
+        "Manipulates the alignment file to make it readable by Humann"
         pass ##RAPsearch has 4 headerlines that humann doesn't seem to like...
 
     def parseResults(alignment):
@@ -155,29 +157,37 @@ class Humann(_Assignment):
         return True
         
 class BestHit(_Assignment):
-    def __init__(self, mapping_method, evalue_cutoff, kegg_fp, kegg_to_ko_fp):
-        super(BestHit, self).__init__(mapping_method, evalue_cutoff)
+    def __init__(self, mapping_method, search_method, evalue_cutoff, kegg_fp, kegg_to_ko_fp):
+        super(BestHit, self).__init__(mapping_method, search_method, evalue_cutoff)
         self.kegg_fp = kegg_fp
         self.kegg_to_ko_fp = kegg_to_ko_fp
         
     def _getCount(self, df, group_key, count_key):
+        "Counts how many times each value is repeated in a group_key column."
         return df.groupby(group_key).size().to_frame(name=count_key).reset_index()
 
     def _load_kegg2ko(self):
+        "Loads the index file and counts how many KOs are assigned to each protein."
         kegg2ko = pandas.read_csv(self.kegg_to_ko_fp, sep='\t', header=None, names=['Subject', 'KO'])
         return kegg2ko.merge(self._getCount(kegg2ko, 'Subject', 'Count_ko'), on='Subject')
             
     def _parseResults(self, alignment):
+        "Parses the alignment results, finds the best match that passes an e-value threshold."
         idx = alignment.groupby('# Fields: Query').apply(lambda g: g['e-value'].idxmin())
         bestAlignment = alignment.ix[idx, ['# Fields: Query', 'Subject', 'identity', 'e-value']]
         return bestAlignment[bestAlignment['e-value']<self.evalue_cutoff]
     
     def _map2ko(self, alignment, kegg2ko):
+        """Merges the alignment results with the kegg index file,
+        normalizes the abundances for proteins with more than 1 KO,
+        finds the total abundances for each ko.
+        """
         hitCounts = kegg2ko.merge(alignment, on='Subject')
         hitCounts['ko_abundance'] = hitCounts['Count_hit'] / hitCounts['Count_ko']
         return hitCounts.groupby('KO').apply(lambda g: g['ko_abundance'].sum())
     
     def _assign_ko(self, alignment_fp):
+        "Manipulates the alignment file to calculate KO abundances in a fastq file"
         kegg2ko = self._load_kegg2ko()
         
         # read the alignent results (RAPsearch for now) and count
@@ -190,10 +200,12 @@ class BestHit(_Assignment):
         return self._map2ko(numHits, kegg2ko)
 
     def _assign_pathway(self, ko_assign):
+        "Manipulates the KO abundance table to calculate pathway abundances in afastq file"
         raise NotImplementedError("Create and override method in child tool")
 
     def run(self, alignment_fp):
         ko_count = self._assign_ko(alignment_fp)
+        print(ko_count)
 
         #path_count = self._assign_pathway(ko_count) # not yet implemented
         
