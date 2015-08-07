@@ -166,46 +166,64 @@ class BestHit(_Assignment):
         "Counts how many times each value is repeated in a group_key column."
         return df.groupby(group_key).size().to_frame(name=count_key).reset_index()
 
+    def _sumAbundance(self, df, group_key, sum_by_key, count_key):
+        return df.groupby(group_key).apply(lambda g: g[sum_by_key].sum()).to_frame(name=count_key).reset_index()
+
     def _load_kegg2ko(self):
         "Loads the index file and counts how many KOs are assigned to each protein."
         kegg2ko = pandas.read_csv(self.kegg_to_ko_fp, sep='\t', header=None, names=['Subject', 'KO'])
         return kegg2ko.merge(self._getCount(kegg2ko, 'Subject', 'Count_ko'), on='Subject')
-            
-    def _parseResults(self, alignment):
-        "Parses the alignment results, finds the best match that passes an e-value threshold."
+
+    def _parseResults(self, alignment_fp):
+        "Parses an alignment result file. Returns only the columns of interest"
+        colNames = ['# Fields: Query', 'Subject', 'identity', 'e-value']
+        if self.search_method.lower() == "blast":
+            return pandas.read_csv(alignment_fp, sep='\t', header=None, names=colNames, usecols=[0,1,2,10])
+        else: # for rapsearch
+            return pandas.read_csv(alignment_fp, sep='\t', skiprows=4, usecols=colNames)
+    
+    def _getBestHit(self, alignment):
+        "Finds the best match that passes an e-value threshold."
         idx = alignment.groupby('# Fields: Query').apply(lambda g: g['e-value'].idxmin())
-        bestAlignment = alignment.ix[idx, ['# Fields: Query', 'Subject', 'identity', 'e-value']]
+        bestAlignment = alignment.ix[idx]
         return bestAlignment[bestAlignment['e-value']<self.evalue_cutoff]
     
     def _map2ko(self, alignment, kegg2ko):
         """Merges the alignment results with the kegg index file,
-        normalizes the abundances for proteins with more than 1 KO,
+        normalizes the abundances for proteins with multiple KO assignments,
         finds the total abundances for each ko.
         """
         hitCounts = kegg2ko.merge(alignment, on='Subject')
-        hitCounts['ko_abundance'] = hitCounts['Count_hit'] / hitCounts['Count_ko']
-        return hitCounts.groupby('KO').apply(lambda g: g['ko_abundance'].sum())
+        hitCounts['norm_abundance'] = hitCounts['Count_hit'] / hitCounts['Count_ko']
+        return self._sumAbundance(hitCounts, 'KO', 'norm_abundance', 'ko_abundance')
     
     def _assign_ko(self, alignment_fp):
         "Manipulates the alignment file to calculate KO abundances in a fastq file"
         kegg2ko = self._load_kegg2ko()
         
-        # read the alignent results (RAPsearch for now) and count
-        ## currently only works with Rapsearch
-        #alignment = pandas.read_csv(blastResults_fp, sep='\t', header=None, names=rapResults.columns) # for reading blast. kind of..
-        alignment = pandas.read_csv(alignment_fp, sep='\t', skiprows=4, header=0)
-        bestAlignment = self._parseResults(alignment)
+        alignment = self._parseResults(alignment_fp)
+        #count # mapped to db from alignment
+        print(alignment['# Fields: Query'].nunique())
+        
+        bestAlignment = self._getBestHit(alignment)
+        # count sequences with < evalue hits with bestAlignment
+        print(bestAlignment['# Fields: Query'].nunique())
+
         numHits = self._getCount(bestAlignment, 'Subject', 'Count_hit')
         # merge and count
-        return self._map2ko(numHits, kegg2ko)
+        ko_count = self._map2ko(numHits, kegg2ko)
+        print(ko_count['KO'].nunique())
+        return ko_count
 
     def _assign_pathway(self, ko_assign):
         "Manipulates the KO abundance table to calculate pathway abundances in afastq file"
         raise NotImplementedError("Create and override method in child tool")
 
-    def run(self, alignment_fp):
+    def run(self, alignment_fp, out_dir):
         ko_count = self._assign_ko(alignment_fp)
         print(ko_count)
+        ko_count.to_csv(os.path.join(out_dir, os.path.basename(os.path.splitext(alignment_fp)[0]+'.ko')),
+                        sep='\t', index=False)
 
         #path_count = self._assign_pathway(ko_count) # not yet implemented
         
@@ -259,19 +277,19 @@ def main(argv=None):
         os.mkdir(args.output_dir)
 
     searchApp = Alignment(config)
-    alignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
-    alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
+    #alignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
+    #alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
 
     ##### find a graceful way of doing this
-    alignment_R1_fp += '.m8'
-    alignment_R2_fp += '.m8'
+    #alignment_R1_fp += '.m8'
+    #alignment_R2_fp += '.m8'
 
     config['kegg_to_ko_fp'] = '/home/tanesc/data/kegg2ko_'
     alignment_R1_fp = '/home/tanesc/data/rapTemp_'
 
     assignerApp = Assignment(config)
-    summary_R1 = assignerApp.run(alignment_R1_fp)
-    summary_R2 = assignerApp.run(alignment_R2_fp)
+    summary_R1 = assignerApp.run(alignment_R1_fp, args.output_dir)
+    #summary_R2 = assignerApp.run(alignment_R2_fp, args.output_dir)
     
     #save_summary(args.summary_file, config, data)
 
