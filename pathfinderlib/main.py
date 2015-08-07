@@ -200,6 +200,7 @@ class BestHit(_Assignment):
     def _assign_ko(self, alignment_fp):
         "Manipulates the alignment file to calculate KO abundances in a fastq file"
         kegg2ko = self._load_kegg2ko()
+        print(kegg2ko['KO'].nunique())
         
         alignment = self._parseResults(alignment_fp)
         #count # mapped to db from alignment
