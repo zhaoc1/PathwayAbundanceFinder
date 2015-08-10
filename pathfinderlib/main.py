@@ -10,18 +10,28 @@ from Bio import SeqIO
 
 from pathfinderlib.version import __version__
 
+def get_config(user_config_file):
+    config ={
+        "humann_fp": "/home/ashwini/ash/other_softwares/humann/",
+        "kegg_fp": "/home/ashwini/ash/kegg/kegg",
+        "kegg_idx_fp":"",
+        "kegg_to_ko_fp":"",
+        "rap_search_fp": "",
+        "search_method":"rapsearch", # rapsearch or blastx
+        "mapping_method":"best_hit", # best_hit or humann
+        "evalue_cutoff":0.001,
+        "num_threads":4
+        }
 
-default_config ={
-    "humann_fp": "/home/ashwini/ash/other_softwares/humann/",
-    "kegg_fp": "/home/ashwini/ash/kegg/kegg",
-    "kegg_idx_fp":"",
-    "kegg_to_ko_fp":"",
-    "rap_search_fp": "",
-    "search_method":"blastx", # rapsearch or blastx
-    "mapping_method":"humann", # best_hit or humann
-    "evalue_cutoff":0.001,
-    "num_threads":4
-    }
+    if user_config_file is None:
+        default_user_config_fp = os.path.expanduser("~/.path_finder.json")
+        if os.path.exists(default_user_config_fp):
+            user_config_file = open(default_user_config_fp)
+
+    if user_config_file is not None:
+        user_config = json.load(user_config_file)
+        config.update(user_config)
+        return config
 
 def returnObject(tool_cls, config):
     # Proceed stepwise here to improve quality of error messages.
@@ -277,10 +287,7 @@ def main(argv=None):
         help="JSON configuration file")
     args = parser.parse_args(argv)
 
-    config = default_config.copy()
-    if args.config_file:
-        user_config = json.load(args.config_file)
-        config.update(user_config)
+    config = get_config(args.config_file)
 
     fwd_fp = args.forward_reads.name
     rev_fp = args.reverse_reads.name
@@ -294,8 +301,8 @@ def main(argv=None):
     #alignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
     #alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
 
-    #config['kegg_to_ko_fp'] = '/home/tanesc/data/kegg2ko_'
-    alignment_R1_fp = '/home/tanesc/data/blastTemp'
+    config['kegg_to_ko_fp'] = '/home/tanesc/data/kegg2ko_'
+    alignment_R1_fp = '/home/tanesc/data/rapTemp_'
     print(alignment_R1_fp)
     assignerApp = Assignment(config)
     summary_R1 = assignerApp.run(alignment_R1_fp, args.output_dir)
