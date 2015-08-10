@@ -17,8 +17,8 @@ default_config ={
     "kegg_idx_fp":"",
     "kegg_to_ko_fp":"",
     "rap_search_fp": "",
-    "search_method":"rapsearch", # rapsearch or blastx
-    "mapping_method":"best_hit", # best_hit or humann
+    "search_method":"blastx", # rapsearch or blastx
+    "mapping_method":"humann", # best_hit or humann
     "evalue_cutoff":0.001,
     "num_threads":4
     }
@@ -70,7 +70,7 @@ class _Alignment(object):
 
 class Blast(_Alignment):
    def __init__(self, search_method, kegg_fp, num_threads):
-       super(Blast, self).__init__(search_method, kegg_fp, evalue_cutoff, num_threads)
+       super(Blast, self).__init__(search_method, kegg_fp, num_threads)
 
    def make_output_fp(self, out_dir, R):
        return os.path.join(out_dir, os.path.basename(os.path.splitext(R)[0]+'.blast'))
@@ -136,18 +136,33 @@ class Humann(_Assignment):
         super(Humann, self).__init__(mapping_method, search_method, evalue_cutoff)
         self.humann_fp = humann_fp
 
-    def run(self, alignment):
-        ## instead of assuming they are in the correct folder, softlink the alignment file to humann/input
-        ## return os.path.join(self.config["humann_fp"], "input", out_dir) ##### softlink this!
-        ## currently only works with blast
+    def run(self, alignment_fp, output_dir):
+        # check the search method and make changes to the alignment file to work with humann
+
+        # softlink alignment files to it's input directory
+        link_fp = os.path.join(self.humann_fp, "input", os.path.basename(alignment_fp)+'.txt')
+        print(link_fp)
+        print(alignment_fp)
+        #os.symlink(alignment_fp, link_fp)
+
+        # run the program
         os.chdir(self.humann_fp)
         subprocess.check_call("scons", stderr=subprocess.STDOUT)
+        
+        # unlink the input files from it's input directory
+        os.unlink(link_fp)
 
-    def fix_alignment_result(self, alignment):
+        # move the output files to the designated output dir
+
+        # parse summary results
+        #summary = parseSummary()
+        #return summary
+    
+    def _fix_alignment_result(self, alignment):
         "Manipulates the alignment file to make it readable by Humann"
         pass ##RAPsearch has 4 headerlines that humann doesn't seem to like...
 
-    def parseResults(alignment):
+    def _parseSummary(alignment):
         pass ## to implement later if we would like to pass the results to the summary file
 
     def make_index(self):
@@ -171,7 +186,7 @@ class BestHit(_Assignment):
 
     def _load_kegg2ko(self):
         "Loads the index file and counts how many KOs are assigned to each protein."
-        kegg2ko = pandas.read_csv(self.kegg_to_ko_fp, sep='\t', header=None, names=['Subject', 'KO'])
+        kegg2ko = pandas.read_csv(self.kegg_to_ko_fp, sep='\t', header=0) # Headers are Subject, KO
         return kegg2ko.merge(self._getCount(kegg2ko, 'Subject', 'Count_ko'), on='Subject')
 
     def _parseResults(self, alignment_fp):
@@ -215,7 +230,7 @@ class BestHit(_Assignment):
 
     def _assign_pathway(self, ko_assign):
         "Manipulates the KO abundance table to calculate pathway abundances in afastq file"
-        raise NotImplementedError("Create and override method in child tool")
+        raise NotImplementedError("Pathway abundance calculations are not yet implemented.")
 
     def run(self, alignment_fp, out_dir):
         ko_count, summary = self._assign_ko(alignment_fp)
@@ -230,6 +245,7 @@ class BestHit(_Assignment):
     def make_index(self):
         kegg_db = SeqIO.parse(open(self.kegg_fp), 'fasta')
         with open(self.kegg_to_ko_fp, 'w') as f_out:
+            f_out.write('Subject'+'\t'+'KO'+'\n')
             for ko in kegg_db:
                 id_split = re.split(';', ko.description)
                 id_split = [_.strip() for _ in id_split]
@@ -278,8 +294,8 @@ def main(argv=None):
     #alignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
     #alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
 
-    config['kegg_to_ko_fp'] = '/home/tanesc/data/kegg2ko_'
-    alignment_R1_fp = '/home/tanesc/data/rapTemp_'
+    #config['kegg_to_ko_fp'] = '/home/tanesc/data/kegg2ko_'
+    alignment_R1_fp = '/home/tanesc/data/blastTemp'
     print(alignment_R1_fp)
     assignerApp = Assignment(config)
     summary_R1 = assignerApp.run(alignment_R1_fp, args.output_dir)
