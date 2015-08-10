@@ -17,7 +17,7 @@ def get_config(user_config_file):
         "kegg_idx_fp":"",
         "kegg_to_ko_fp":"",
         "rap_search_fp": "",
-        "search_method":"rapsearch", # rapsearch or blastx
+        "search_method":"blastx", # rapsearch or blastx
         "mapping_method":"best_hit", # best_hit or humann
         "evalue_cutoff":0.001,
         "num_threads":4
@@ -119,12 +119,12 @@ class RapSearch(_Alignment):
         cmd = [
             os.path.join(os.path.dirname(self.rap_search_fp),'prerapsearch'),
             "-d", self.kegg_fp,
-            "-n", self.kegg_index_fp
+            "-n", self.kegg_idx_fp
             ]
         subprocess.check_call(cmd, stderr=subprocess.STDOUT)
 
     def index_exists(self):
-        return os.path.exists(self.kegg_index_fp)
+        return os.path.exists(self.kegg_idx_fp)
 
 
 def Assignment(config):
@@ -326,11 +326,8 @@ def make_index_main(argv=None):
         type=argparse.FileType("r"),
         help="JSON configuration file")
     args = p.parse_args(argv)
-    
-    config = default_config.copy()
-    if args.config_file:
-        user_config = json.load(args.config_file)
-        config.update(user_config)
+
+    config = get_config(args.config_file)
         
     searchApp = Alignment(config)
     if not searchApp.index_exists():
