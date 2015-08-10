@@ -66,7 +66,7 @@ class _Alignment(object):
         output_fp = self.make_output_fp(out_dir, R)
         command = self.make_command(r_fasta.name, output_fp)
         subprocess.check_call(command, stderr=subprocess.STDOUT)
-        return output_fp
+        return output_fp+'.m8' if self.search_method.lower()=='rapsearch' else output_fp
 
 class Blast(_Alignment):
    def __init__(self, search_method, kegg_fp, num_threads):
@@ -195,40 +195,37 @@ class BestHit(_Assignment):
         """
         hitCounts = kegg2ko.merge(alignment, on='Subject')
         hitCounts['norm_abundance'] = hitCounts['Count_hit'] / hitCounts['Count_ko']
-        return self._sumAbundance(hitCounts, 'KO', 'norm_abundance', 'ko_abundance')
+        return self._sumAbundance(hitCounts, 'KO', 'norm_abundance', 'ko_abundance'), hitCounts['Subject'].nunique()
     
     def _assign_ko(self, alignment_fp):
         "Manipulates the alignment file to calculate KO abundances in a fastq file"
         kegg2ko = self._load_kegg2ko()
-        print(kegg2ko['KO'].nunique())
         
         alignment = self._parseResults(alignment_fp)
-        #count # mapped to db from alignment
-        print(alignment['# Fields: Query'].nunique())
-        
         bestAlignment = self._getBestHit(alignment)
-        # count sequences with < evalue hits with bestAlignment
-        print(bestAlignment['# Fields: Query'].nunique())
-
         numHits = self._getCount(bestAlignment, 'Subject', 'Count_hit')
+
         # merge and count
-        ko_count = self._map2ko(numHits, kegg2ko)
-        print(ko_count['KO'].nunique())
-        return ko_count
+        ko_count, ko_hits = self._map2ko(numHits, kegg2ko)
+        summary = {'db_hit':alignment['# Fields: Query'].nunique(),
+                   'db_hit_evalue':bestAlignment['# Fields: Query'].nunique(),
+                   'ko_hits':ko_hits,
+                   'unique_ko':ko_count['KO'].nunique()}
+        return ko_count, summary
 
     def _assign_pathway(self, ko_assign):
         "Manipulates the KO abundance table to calculate pathway abundances in afastq file"
         raise NotImplementedError("Create and override method in child tool")
 
     def run(self, alignment_fp, out_dir):
-        ko_count = self._assign_ko(alignment_fp)
+        ko_count, summary = self._assign_ko(alignment_fp)
         print(ko_count)
         ko_count.to_csv(os.path.join(out_dir, os.path.basename(os.path.splitext(alignment_fp)[0]+'.ko')),
                         sep='\t', index=False)
 
         #path_count = self._assign_pathway(ko_count) # not yet implemented
         
-        return "Assigner run" ## return results as a dictionary so they can be written to json file 
+        return summary
 
     def make_index(self):
         kegg_db = SeqIO.parse(open(self.kegg_fp), 'fasta')
@@ -281,18 +278,14 @@ def main(argv=None):
     #alignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
     #alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
 
-    ##### find a graceful way of doing this
-    #alignment_R1_fp += '.m8'
-    #alignment_R2_fp += '.m8'
-
     config['kegg_to_ko_fp'] = '/home/tanesc/data/kegg2ko_'
     alignment_R1_fp = '/home/tanesc/data/rapTemp_'
-
+    print(alignment_R1_fp)
     assignerApp = Assignment(config)
     summary_R1 = assignerApp.run(alignment_R1_fp, args.output_dir)
     #summary_R2 = assignerApp.run(alignment_R2_fp, args.output_dir)
     
-    #save_summary(args.summary_file, config, data)
+    #save_summary(args.summary_file, config, {'R1':summary_R1, 'R2':summary_R2})
 
 def save_summary(f, config, data):
     result = {
