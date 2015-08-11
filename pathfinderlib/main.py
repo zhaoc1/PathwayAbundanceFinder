@@ -61,7 +61,7 @@ class _Alignment(object):
             "seq", "-a",
             filename
             ]
-    
+
     def fastq_to_fasta(self, filename):
         fasta = tempfile.NamedTemporaryFile()
         command = self._make_fastq_to_fasta_command(filename)
@@ -233,10 +233,11 @@ class BestHit(_Assignment):
 
         # merge and count
         ko_count, ko_hits = self._map2ko(numHits, kegg2ko)
-        summary = {'db_hit':alignment['# Fields: Query'].nunique(),
-                   'db_hit_evalue':bestAlignment['# Fields: Query'].nunique(),
+        summary = {'mapped_sequences':alignment['# Fields: Query'].nunique(),
+                   'mapped_sequences_evalue':bestAlignment['# Fields: Query'].nunique(),
+                   'unique_prot_hits':bestAlignment['Subject'].nunique(),
                    'ko_hits':ko_hits,
-                   'unique_ko':ko_count['KO'].nunique()}
+                   'unique_ko_hits':ko_count['KO'].nunique()}
         return ko_count, summary
 
     def _assign_pathway(self, ko_assign):
@@ -260,7 +261,7 @@ class BestHit(_Assignment):
             for ko in kegg_db:
                 id_split = re.split(';', ko.description)
                 id_split = [_.strip() for _ in id_split]
-                [f_out.write('\t'.join([ko.id, _])+'\n') for _ in id_split if _.startswith('K0')]
+                [f_out.write('\t'.join([ko.id, _])+'\n') for _ in id_split if _.startswith(('K0', 'K1'))]
 
     def index_exists(self):
         return os.path.exists(self.kegg_to_ko_fp)
@@ -305,6 +306,9 @@ def main(argv=None):
     assignerApp = Assignment(config)
     summary_R1 = assignerApp.run(alignment_R1_fp, args.output_dir)
     summary_R2 = assignerApp.run(alignment_R2_fp, args.output_dir)
+
+    summary_R1.update({'num_sequences': count_seq(fwd_fp)})
+    summary_R2.update({'num_sequences': count_seq(rev_fp)})
     
     save_summary(args.summary_file, config, {'R1':summary_R1, 'R2':summary_R2})
 
@@ -317,6 +321,11 @@ def save_summary(f, config, data):
         }
     json.dump(result, f)
 
+def count_seq(R):
+    "Returns the number of sequences in the query file. Assumes fastq!!"
+    stdout = subprocess.check_output(['wc', '-l', R], stderr=subprocess.STDOUT)
+    return int(stdout.split(' ', 1)[0])/4
+                        
 def make_index_main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument(
