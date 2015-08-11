@@ -17,7 +17,7 @@ def get_config(user_config_file):
         "kegg_idx_fp":"",
         "kegg_to_ko_fp":"",
         "rap_search_fp": "",
-        "search_method":"blastx", # rapsearch or blastx
+        "search_method":"rapsearch", # rapsearch or blastx
         "mapping_method":"best_hit", # best_hit or humann
         "evalue_cutoff":0.001,
         "num_threads":4
@@ -150,23 +150,24 @@ class Humann(_Assignment):
         # check the search method and make changes to the alignment file to work with humann
 
         # softlink alignment files to it's input directory
-        link_fp = os.path.join(self.humann_fp, "input", os.path.basename(alignment_fp)+'.txt')
-        print(link_fp)
-        print(alignment_fp)
+        #link_fp = os.path.join(self.humann_fp, "input", os.path.basename(alignment_fp)+'.txt')
+        #print(link_fp)
+        #print(alignment_fp)
         #os.symlink(alignment_fp, link_fp)
 
         # run the program
-        os.chdir(self.humann_fp)
-        subprocess.check_call("scons", stderr=subprocess.STDOUT)
+        #os.chdir(self.humann_fp)
+        #subprocess.check_call("scons", stderr=subprocess.STDOUT)
         
         # unlink the input files from it's input directory
-        os.unlink(link_fp)
+        #os.unlink(link_fp)
 
         # move the output files to the designated output dir
 
         # parse summary results
         #summary = parseSummary()
         #return summary
+        raise NotImplementedError("Humann is not yet implemented to work with the pipeline.")
     
     def _fix_alignment_result(self, alignment):
         "Manipulates the alignment file to make it readable by Humann"
@@ -202,7 +203,7 @@ class BestHit(_Assignment):
     def _parseResults(self, alignment_fp):
         "Parses an alignment result file. Returns only the columns of interest"
         colNames = ['# Fields: Query', 'Subject', 'identity', 'e-value']
-        if self.search_method.lower() == "blast":
+        if self.search_method.lower() == "blastx":
             return pandas.read_csv(alignment_fp, sep='\t', header=None, names=colNames, usecols=[0,1,2,10])
         else: # for rapsearch
             return pandas.read_csv(alignment_fp, sep='\t', skiprows=4, usecols=colNames)
@@ -298,17 +299,14 @@ def main(argv=None):
         os.mkdir(args.output_dir)
 
     searchApp = Alignment(config)
-    #alignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
-    #alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
+    alignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
+    alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
 
-    config['kegg_to_ko_fp'] = '/home/tanesc/data/kegg2ko_'
-    alignment_R1_fp = '/home/tanesc/data/rapTemp_'
-    print(alignment_R1_fp)
     assignerApp = Assignment(config)
     summary_R1 = assignerApp.run(alignment_R1_fp, args.output_dir)
-    #summary_R2 = assignerApp.run(alignment_R2_fp, args.output_dir)
+    summary_R2 = assignerApp.run(alignment_R2_fp, args.output_dir)
     
-    #save_summary(args.summary_file, config, {'R1':summary_R1, 'R2':summary_R2})
+    save_summary(args.summary_file, config, {'R1':summary_R1, 'R2':summary_R2})
 
 def save_summary(f, config, data):
     result = {
