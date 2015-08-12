@@ -246,11 +246,12 @@ class BestHit(_Assignment):
 
     def run(self, alignment_fp, out_dir):
         ko_count, summary = self._assign_ko(alignment_fp)
-        print(ko_count)
         ko_count.to_csv(os.path.join(out_dir, os.path.basename(os.path.splitext(alignment_fp)[0]+'.ko')),
                         sep='\t', index=False)
 
-        #path_count = self._assign_pathway(ko_count) # not yet implemented
+        #path_count, summary_path = self._assign_pathway(ko_count) # not yet implemented
+        #path_count.to_csv(os.path.join(out_dir, os.path.basename(os.path.splitext(alignment_fp)[0]+'.path')),
+        #                        sep='\t', index=False)
         
         return summary
 
