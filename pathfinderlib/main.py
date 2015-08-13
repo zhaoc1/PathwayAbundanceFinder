@@ -12,11 +12,11 @@ from pathfinderlib.version import __version__
 
 def get_config(user_config_file):
     config ={
-        "humann_fp": "/home/ashwini/ash/other_softwares/humann/",
-        "kegg_fp": "/home/ashwini/ash/kegg/kegg",
-        "kegg_idx_fp":"",
-        "kegg_to_ko_fp":"",
-        "rap_search_fp": "",
+        "humann_fp": "humann",
+        "kegg_fp": "kegg",
+        "kegg_idx_fp":"keggRap",
+        "kegg_to_ko_fp":"kegg2ko",
+        "rap_search_fp": "rapsearch",
         "search_method":"rapsearch", # rapsearch or blastx
         "mapping_method":"best_hit", # best_hit or humann
         "evalue_cutoff":0.001,
@@ -31,9 +31,9 @@ def get_config(user_config_file):
     if user_config_file is not None:
         user_config = json.load(user_config_file)
         config.update(user_config)
-        return config
+    return config
 
-def returnObject(tool_cls, config):
+def make_tool_from_config(tool_cls, config):
     # Proceed stepwise here to improve quality of error messages.
     tool_args = []
     for argname in tool_cls.get_argnames():
@@ -43,7 +43,7 @@ def returnObject(tool_cls, config):
 
 def Alignment(config):
     tool_cls = search_methods_available[config["search_method"]]
-    return returnObject(tool_cls, config)
+    return make_tool_from_config(tool_cls, config)
 
 class _Alignment(object):
     def __init__(self, search_method, kegg_fp, num_threads):
@@ -55,28 +55,24 @@ class _Alignment(object):
     def get_argnames(cls):
         return inspect.getargspec(cls.__init__)[0][1:]
 
-    def _make_fastq_to_fasta_command(self, filename):
-        return [
-            "seqtk",
-            "seq", "-a",
-            filename
-            ]
-
     def fastq_to_fasta(self, filename):
         fasta = tempfile.NamedTemporaryFile()
-        command = self._make_fastq_to_fasta_command(filename)
+        command = ["seqtk", "seq", "-a", filename]
         subprocess.check_call(command, stdout=fasta, stderr=subprocess.STDOUT)
         return fasta
 
     def make_command(self, R, output):
         raise NotImplementedError("Create and override method in child tool")
 
+    def _fix_output_fp(self, output_fp):
+        return output_fp+'.m8' if self.search_method.lower()=='rapsearch' else output_fp
+    
     def run(self, R, out_dir):
         r_fasta = self.fastq_to_fasta(R)
         output_fp = self.make_output_fp(out_dir, R)
         command = self.make_command(r_fasta.name, output_fp)
         subprocess.check_call(command, stderr=subprocess.STDOUT)
-        return output_fp+'.m8' if self.search_method.lower()=='rapsearch' else output_fp
+        return self._fix_output_fp(output_fp)
 
 class Blast(_Alignment):
    def __init__(self, search_method, kegg_fp, num_threads):
@@ -129,7 +125,7 @@ class RapSearch(_Alignment):
 
 def Assignment(config):
     tool_cls = mapping_methods_available[config["mapping_method"]]
-    return returnObject(tool_cls, config)
+    return make_tool_from_config(tool_cls, config)
 
 class _Assignment(object):
     def __init__(self, mapping_method, search_method, evalue_cutoff):
@@ -224,14 +220,13 @@ class BestHit(_Assignment):
         return self._sumAbundance(hitCounts, 'KO', 'norm_abundance', 'ko_abundance'), hitCounts['Subject'].nunique()
     
     def _assign_ko(self, alignment_fp):
-        "Manipulates the alignment file to calculate KO abundances in a fastq file"
-        kegg2ko = self._load_kegg2ko()
-        
+        "Manipulates the alignment file to calculate KO abundances in a fastq file"        
         alignment = self._parseResults(alignment_fp)
         bestAlignment = self._getBestHit(alignment)
         numHits = self._getCount(bestAlignment, 'Subject', 'Count_hit')
 
         # merge and count
+        kegg2ko = self._load_kegg2ko()
         ko_count, ko_hits = self._map2ko(numHits, kegg2ko)
         summary = {'mapped_sequences':alignment['# Fields: Query'].nunique(),
                    'mapped_sequences_evalue':bestAlignment['# Fields: Query'].nunique(),
@@ -240,19 +235,10 @@ class BestHit(_Assignment):
                    'unique_ko_hits':ko_count['KO'].nunique()}
         return ko_count, summary
 
-    def _assign_pathway(self, ko_assign):
-        "Manipulates the KO abundance table to calculate pathway abundances in afastq file"
-        raise NotImplementedError("Pathway abundance calculations are not yet implemented.")
-
     def run(self, alignment_fp, out_dir):
         ko_count, summary = self._assign_ko(alignment_fp)
-        ko_count.to_csv(os.path.join(out_dir, os.path.basename(os.path.splitext(alignment_fp)[0]+'.ko')),
-                        sep='\t', index=False)
-
-        #path_count, summary_path = self._assign_pathway(ko_count) # not yet implemented
-        #path_count.to_csv(os.path.join(out_dir, os.path.basename(os.path.splitext(alignment_fp)[0]+'.path')),
-        #                        sep='\t', index=False)
-        
+        ko_out_fp = os.path.join(out_dir, os.path.basename(os.path.splitext(alignment_fp)[0]+'.ko'))
+        ko_count.to_csv(ko_out_fp, sep='\t', index=False)
         return summary
 
     def make_index(self):
@@ -308,9 +294,6 @@ def main(argv=None):
     summary_R1 = assignerApp.run(alignment_R1_fp, args.output_dir)
     summary_R2 = assignerApp.run(alignment_R2_fp, args.output_dir)
 
-    summary_R1.update({'num_sequences': count_seq(fwd_fp)})
-    summary_R2.update({'num_sequences': count_seq(rev_fp)})
-    
     save_summary(args.summary_file, config, {'R1':summary_R1, 'R2':summary_R2})
 
 def save_summary(f, config, data):
@@ -322,11 +305,6 @@ def save_summary(f, config, data):
         }
     json.dump(result, f)
 
-def count_seq(R):
-    "Returns the number of sequences in the query file. Assumes fastq!!"
-    stdout = subprocess.check_output(['wc', '-l', R], stderr=subprocess.STDOUT)
-    return int(stdout.split(' ', 1)[0])/4
-                        
 def make_index_main(argv=None):
     p = argparse.ArgumentParser()
     p.add_argument(
