@@ -14,4 +14,5 @@ setup(
     url='https://github.com/PennChopMicrobiomeProgram',
     packages=['pathfinderlib'],
     scripts=['scripts/pathfinder.py', 'scripts/make_index_pathFinder.py'],
+    install_requires=["re", "pandas", "biopython"]
     )
