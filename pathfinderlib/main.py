@@ -207,8 +207,11 @@ class BestHit(_Assignment):
     def _getBestHit(self, alignment):
         "Finds the best match that passes an e-value threshold."
         idx = alignment.groupby('# Fields: Query').apply(lambda g: g['e-value'].idxmin())
-        bestAlignment = alignment.ix[idx]
-        return bestAlignment[bestAlignment['e-value']<self.evalue_cutoff]
+        if not idx.empty:
+            bestAlignment = alignment.ix[idx]
+            return bestAlignment[bestAlignment['e-value']<self.evalue_cutoff]
+        else:
+            return pandas.DataFrame()
     
     def _map2ko(self, alignment, kegg2ko):
         """Merges the alignment results with the kegg index file,
@@ -216,23 +219,30 @@ class BestHit(_Assignment):
         finds the total abundances for each ko.
         """
         hitCounts = kegg2ko.merge(alignment, on='Subject')
-        hitCounts['norm_abundance'] = hitCounts['Count_hit'] / hitCounts['Count_ko']
-        return self._sumAbundance(hitCounts, 'KO', 'norm_abundance', 'ko_abundance'), hitCounts['Subject'].nunique()
+        if not hitCounts.empty:
+            hitCounts['norm_abundance'] = hitCounts['Count_hit'] / hitCounts['Count_ko']
+            return self._sumAbundance(hitCounts, 'KO', 'norm_abundance', 'ko_abundance'), hitCounts['Subject'].nunique()
+        else:
+            return pandas.DataFrame(), 0
     
     def _assign_ko(self, alignment_fp):
         "Manipulates the alignment file to calculate KO abundances in a fastq file"        
         alignment = self._parseResults(alignment_fp)
         bestAlignment = self._getBestHit(alignment)
-        numHits = self._getCount(bestAlignment, 'Subject', 'Count_hit')
+        if not bestAlignment.empty:
+            numHits = self._getCount(bestAlignment, 'Subject', 'Count_hit')
+            kegg2ko = self._load_kegg2ko()
+            ko_count, ko_hits = self._map2ko(numHits, kegg2ko) # merge and count
+        else:
+            ko_count = pandas.DataFrame()
+            ko_hits = 0
 
-        # merge and count
-        kegg2ko = self._load_kegg2ko()
-        ko_count, ko_hits = self._map2ko(numHits, kegg2ko)
-        summary = {'mapped_sequences':alignment['# Fields: Query'].nunique(),
-                   'mapped_sequences_evalue':bestAlignment['# Fields: Query'].nunique(),
-                   'unique_prot_hits':bestAlignment['Subject'].nunique(),
+        summary = {'mapped_sequences':alignment.get('# Fields: Query', pandas.Series()).nunique(),
+                   'mapped_sequences_evalue':bestAlignment.get('# Fields: Query', pandas.Series()).nunique(),
+                   'unique_prot_hits':bestAlignment.get('Subject', pandas.Series()).nunique(),
                    'ko_hits':ko_hits,
-                   'unique_ko_hits':ko_count['KO'].nunique()}
+                   'unique_ko_hits':ko_count.get('KO', pandas.Series()).nunique()}
+        
         return ko_count, summary
 
     def run(self, alignment_fp, out_dir):
