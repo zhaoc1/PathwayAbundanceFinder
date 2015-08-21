@@ -304,7 +304,10 @@ def main(argv=None):
     summary_R1 = assignerApp.run(alignment_R1_fp, args.output_dir)
     summary_R2 = assignerApp.run(alignment_R2_fp, args.output_dir)
 
-    save_summary(args.summary_file, config, {'R1':summary_R1, 'R2':summary_R2})
+    summaries = [summary_R1, summary_R2]
+    summary = {k: sum(d[k] for d in summaries) for k in summaries[0]} # from stackoverflow
+
+    save_summary(args.summary_file, config, summary)
 
 def save_summary(f, config, data):
     result = {
