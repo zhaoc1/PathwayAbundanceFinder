@@ -13,5 +13,6 @@ setup(
     author_email='patil.ashwini1091@gmail.com',
     url='https://github.com/PennChopMicrobiomeProgram',
     packages=['pathfinderlib'],
-    scripts=['pathfinder.py'],
+    scripts=['scripts/pathfinder.py', 'scripts/make_index_pathFinder.py'],
+    install_requires=["pandas", "biopython"]
     )
