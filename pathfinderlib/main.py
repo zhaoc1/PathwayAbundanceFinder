@@ -234,7 +234,7 @@ class BestHit(_Assignment):
             kegg2ko = self._load_kegg2ko()
             ko_count, ko_hits = self._map2ko(numHits, kegg2ko) # merge and count
         else:
-            ko_count = pandas.DataFrame()
+            ko_count = pandas.DataFrame(columns=['KO', 'ko_count'])
             ko_hits = 0
 
         summary = {'mapped_sequences':alignment.get('# Fields: Query', pandas.Series()).nunique(),
@@ -245,10 +245,23 @@ class BestHit(_Assignment):
         
         return ko_count, summary
 
-    def run(self, alignment_fp, out_dir):
-        ko_count, summary = self._assign_ko(alignment_fp)
-        ko_out_fp = os.path.join(out_dir, os.path.basename(os.path.splitext(alignment_fp)[0]+'.ko'))
-        ko_count.to_csv(ko_out_fp, sep='\t', index=False)
+    def run(self, alignment_R1_fp, alignment_R2_fp, out_dir):
+        # Assign kos to both R1 and R2
+        ko_count_R1, summary_R1 = self._assign_ko(alignment_R1_fp)
+        ko_count_R2, summary_R2 = self._assign_ko(alignment_R2_fp)
+
+        # sum the summaries for R1 and R2
+        summaries = [summary_R1, summary_R2]
+        summary = {k: sum(d[k] for d in summaries) for k in summaries[0]} # from stackoverflow
+
+        # sum the ko results for R1 and R2
+        ko_count = ko_count_R1.merge(ko_count_R2, how='outer', on='KO').set_index('KO')
+        ko_count = ko_count.sum(axis=1).to_frame(name='ko_abundance')
+
+        # write to file
+        ko_out_fp = os.path.join(out_dir, os.path.basename(os.path.splitext(alignment_R1_fp)[0]+'.ko').replace('_R1', ''))
+        ko_count.to_csv(ko_out_fp, sep='\t')
+        
         return summary
 
     def make_index(self):
@@ -301,11 +314,7 @@ def main(argv=None):
     alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
 
     assignerApp = Assignment(config)
-    summary_R1 = assignerApp.run(alignment_R1_fp, args.output_dir)
-    summary_R2 = assignerApp.run(alignment_R2_fp, args.output_dir)
-
-    summaries = [summary_R1, summary_R2]
-    summary = {k: sum(d[k] for d in summaries) for k in summaries[0]} # from stackoverflow
+    summary = assignerApp.run(alignment_R1_fp, alignment_R2_fp, args.output_dir)
 
     save_summary(args.summary_file, config, summary)
 
