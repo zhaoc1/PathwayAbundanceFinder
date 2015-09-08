@@ -15,6 +15,18 @@ class PathfinderTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.output_dir)
 
+    def run_pipeline(self, r1, r2, config_file):
+
+        args = [
+            "--forward-reads", r1.name,
+            "--reverse-reads", r2.name,
+            "--summary-file", self.summary_fp,
+            "--output-dir", self.output_dir,
+            "--config-file", config_file.name
+            ]
+
+        main(args)
+
     def test_main_RAP_bestHit(self):
         #generate the correct config file
         self.config['mapping_method'] = 'best_hit'
@@ -42,18 +54,6 @@ class PathfinderTest(unittest.TestCase):
         with open(self.summary_fp) as f:
             observed = json.load(f)
         self.assertEqual(observed.get('data', {}), EXPECTED_SUMMARY)
-
-    def run_pipeline(self, r1, r2, config_file):
-
-        args = [
-            "--forward-reads", r1.name,
-            "--reverse-reads", r2.name,
-            "--summary-file", self.summary_fp,
-            "--output-dir", self.output_dir,
-            "--config-file", config_file.name
-            ]
-
-        main(args)
 
     def test_make_index_bestHit(self):
         # create the mock kegg file
