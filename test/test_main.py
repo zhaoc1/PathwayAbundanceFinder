@@ -4,7 +4,7 @@ import tempfile
 import unittest
 import json
 
-from pathfinderlib.main import main, get_config, Alignment, Assignment
+from pathfinderlib.main import main, get_config, Aligner, Assigner
 
 class PathfinderTest(unittest.TestCase):
     def setUp(self):
@@ -78,7 +78,7 @@ class PathfinderTest(unittest.TestCase):
         self.config['kegg_to_ko_fp'] = kegg2ko.name
 
         # make index
-        assignerApp = Assignment(self.config)
+        assignerApp = Assigner(self.config)
         assignerApp.make_index()
 
         # check equal

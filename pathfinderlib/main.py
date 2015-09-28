@@ -41,11 +41,11 @@ def make_tool_from_config(tool_cls, config):
         tool_args.append(arg)
     return tool_cls(*tool_args)
 
-def Alignment(config):
+def Aligner(config):
     tool_cls = search_methods_available[config["search_method"]]
     return make_tool_from_config(tool_cls, config)
 
-class _Alignment(object):
+class _Aligner(object):
     def __init__(self, search_method, kegg_fp, num_threads):
         self.search_method = search_method
         self.kegg_fp = kegg_fp
@@ -74,7 +74,7 @@ class _Alignment(object):
         subprocess.check_call(command, stderr=subprocess.STDOUT)
         return self._fix_output_fp(output_fp)
 
-class Blast(_Alignment):
+class Blast(_Aligner):
    def __init__(self, search_method, kegg_fp, num_threads):
        super(Blast, self).__init__(search_method, kegg_fp, num_threads)
 
@@ -94,7 +94,7 @@ class Blast(_Alignment):
    def index_exists(self):
        return os.path.exists(self.kegg_fp)
 
-class RapSearch(_Alignment):
+class RapSearch(_Aligner):
     def __init__(self, search_method, kegg_fp, num_threads, kegg_idx_fp, rap_search_fp):
         super(RapSearch, self).__init__(search_method, kegg_fp, num_threads)
         self.kegg_idx_fp = kegg_idx_fp
@@ -123,11 +123,11 @@ class RapSearch(_Alignment):
         return os.path.exists(self.kegg_idx_fp)
 
 
-def Assignment(config):
+def Assigner(config):
     tool_cls = mapping_methods_available[config["mapping_method"]]
     return make_tool_from_config(tool_cls, config)
 
-class _Assignment(object):
+class _Assigner(object):
     def __init__(self, mapping_method, search_method, evalue_cutoff):
         self.mapping_method = mapping_method
         self.search_method = search_method
@@ -137,7 +137,7 @@ class _Assignment(object):
     def get_argnames(cls):
         return inspect.getargspec(cls.__init__)[0][1:]
 
-class Humann(_Assignment):
+class Humann(_Assigner):
     def __init__(self, mapping_method, search_method, evalue_cutoff, humann_fp):
         super(Humann, self).__init__(mapping_method, search_method, evalue_cutoff)
         self.humann_fp = humann_fp
@@ -178,7 +178,7 @@ class Humann(_Assignment):
     def index_exists(self):
         return True
         
-class BestHit(_Assignment):
+class BestHit(_Assigner):
     def __init__(self, mapping_method, search_method, evalue_cutoff, kegg_fp, kegg_to_ko_fp):
         super(BestHit, self).__init__(mapping_method, search_method, evalue_cutoff)
         self.kegg_fp = kegg_fp
@@ -309,11 +309,11 @@ def main(argv=None):
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
 
-    searchApp = Alignment(config)
+    searchApp = Aligner(config)
     alignment_R1_fp = searchApp.run(fwd_fp, args.output_dir)
     alignment_R2_fp = searchApp.run(rev_fp, args.output_dir)
 
-    assignerApp = Assignment(config)
+    assignerApp = Assigner(config)
     summary = assignerApp.run(alignment_R1_fp, alignment_R2_fp, args.output_dir)
 
     save_summary(args.summary_file, config, summary)
@@ -337,11 +337,11 @@ def make_index_main(argv=None):
 
     config = get_config(args.config_file)
         
-    searchApp = Alignment(config)
+    searchApp = Aligner(config)
     if not searchApp.index_exists():
         searchApp.make_index()
 
-    assignerApp = Assignment(config)
+    assignerApp = Assigner(config)
     if not assignerApp.index_exists():
         assignerApp.make_index()
 
