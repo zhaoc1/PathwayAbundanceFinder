@@ -107,7 +107,7 @@ class RapSearch(_Aligner):
         return [
             self.rap_search_fp, "-q", R,
             "-d", self.kegg_idx_fp,
-            "-o", output_fp,
+            "-o", output_fp, "-v", "1", "-b", "1",
             "-z", str(self.num_threads), "-s", "f"
             ]
 
