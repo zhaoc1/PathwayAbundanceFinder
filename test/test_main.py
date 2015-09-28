@@ -15,8 +15,17 @@ class PathfinderTest(unittest.TestCase):
     def tearDown(self):
         shutil.rmtree(self.output_dir)
 
-    def run_pipeline(self, r1, r2, config_file):
+    def ko_fp_from_aln(self, r1_name):
+        return os.path.join(self.output_dir, os.path.basename(os.path.splitext(r1_name)[0]+'.ko'))
 
+    def run_pipeline(self, R1, R2, config_file):
+        r1 = tempfile.NamedTemporaryFile(suffix=".fastq")
+        r1.write(R1)
+        r1.seek(0)
+        r2 = tempfile.NamedTemporaryFile(suffix=".fastq")
+        r2.write(R2)
+        r2.seek(0)
+        
         args = [
             "--forward-reads", r1.name,
             "--reverse-reads", r2.name,
@@ -26,7 +35,18 @@ class PathfinderTest(unittest.TestCase):
             ]
 
         main(args)
+        return r1.name
 
+    def check_results(self, results_fp, summary_fp, expected_results, expected_summary):
+        #check if the output is correct
+        observed = open(results_fp).read()
+        self.assertEqual(observed.strip(), expected_results)
+        
+        # check if the summary file is correct
+        with open(self.summary_fp) as f:
+            observed = json.load(f)
+        self.assertEqual(observed.get('data', {}), expected_summary)
+        
     def test_main_RAP_bestHit(self):
         #generate the correct config file
         self.config['mapping_method'] = 'best_hit'
@@ -34,26 +54,18 @@ class PathfinderTest(unittest.TestCase):
         json.dump(self.config, config_file)
         config_file.seek(0)
         
-        # create the fake input file
-        r1 = tempfile.NamedTemporaryFile(suffix=".fastq")
-        r1.write(MOCK_R1)
-        r1.seek(0)
-        r2 = tempfile.NamedTemporaryFile(suffix=".fastq")
-        r2.write(MOCK_R2)
-        r2.seek(0)
+        # run the pipeline and check results
+        r1_name = self.run_pipeline(MOCK_R1, MOCK_R2, config_file)
+        self.check_results(self.ko_fp_from_aln(r1_name), self.summary_fp, EXPECTED_OUTPUT, EXPECTED_SUMMARY)
 
-        # run the pipeline
-        self.run_pipeline(r1, r2, config_file)
+    def test_empty_alignment(self):
+        config_file = tempfile.NamedTemporaryFile(suffix=".json")
+        json.dump(self.config, config_file)
+        config_file.seek(0)
 
-        # check if the output is correct
-        myoutput_fp = os.path.join(self.output_dir, os.path.basename(os.path.splitext(r1.name)[0]+'.ko'))
-        observed = open(myoutput_fp).read()
-        self.assertEqual(observed, EXPECTED_OUTPUT)
-        
-        # check if the summary file is correct
-        with open(self.summary_fp) as f:
-            observed = json.load(f)
-        self.assertEqual(observed.get('data', {}), EXPECTED_SUMMARY)
+        # run the pipeline and check results
+        r1_name = self.run_pipeline(MOCK_NO_MATCH_R1, MOCK_NO_MATCH_R2, config_file)
+        self.check_results(self.ko_fp_from_aln(r1_name), self.summary_fp, EXPECTED_NO_MATCH_OUTPUT, EXPECTED_NO_MATCH_SUMMARY)
 
     def test_make_index_bestHit(self):
         # create the mock kegg file
@@ -61,7 +73,6 @@ class PathfinderTest(unittest.TestCase):
         kegg.write(MOCK_KEGG)
         kegg.seek(0)
         
-        # create temp directory for the index
         kegg2ko = tempfile.NamedTemporaryFile()
         self.config['kegg_fp'] = kegg.name
         self.config['kegg_to_ko_fp'] = kegg2ko.name
@@ -74,30 +85,6 @@ class PathfinderTest(unittest.TestCase):
         observed = open(self.config["kegg_to_ko_fp"]).read()
         self.assertEqual(observed.strip(), KEGG_TO_KO.strip())
 
-    def test_empty_alignment(self):
-        config_file = tempfile.NamedTemporaryFile(suffix=".json")
-        json.dump(self.config, config_file)
-        config_file.seek(0)
-        
-        r1 = tempfile.NamedTemporaryFile(suffix=".fastq")
-        r1.write(MOCK_NO_MATCH_R1)
-        r1.seek(0)
-        r2 = tempfile.NamedTemporaryFile(suffix=".fastq")
-        r2.write(MOCK_NO_MATCH_R2)
-        r2.seek(0)
-                                
-        self.run_pipeline(r1, r2, config_file)
-        
-        #check if the output is correct
-        myoutput_fp = os.path.join(self.output_dir, os.path.basename(os.path.splitext(r1.name)[0]+'.ko'))
-        observed = open(myoutput_fp).read()
-        self.assertEqual(observed.strip(), EXPECTED_NO_MATCH_OUTPUT)
-        
-        # check if the summary file is correct
-        with open(self.summary_fp) as f:
-            observed = json.load(f)
-        self.assertEqual(observed.get('data', {}), EXPECTED_NO_MATCH_SUMMARY)
-        
 
 # get known sequences from KEGG to test the cases:
 # a sequence having no hits in the kegg database (s0)
@@ -166,8 +153,7 @@ K01491 methenyltetrahydrofolate cyclohydrolase [EC:3.5.4.9]	1.5
 K01800 maleylacetoacetate isomerase [EC:5.2.1.2]	1.0
 K01938 formate--tetrahydrofolate ligase [EC:6.3.4.3]	0.5
 K10609 cullin 4	1.0
-K04257 olfactory receptor	1.0
-"""
+K04257 olfactory receptor	1.0"""
 
 EXPECTED_SUMMARY = {"unique_prot_hits": 14, "mapped_sequences": 18, "ko_hits": 14, "unique_ko_hits": 16, "mapped_sequences_evalue": 16}
 
