@@ -12,6 +12,7 @@ from pathfinderlib.version import __version__
 
 def get_config(user_config_file):
     config ={
+        "seqtk_fp": "seqtk",
         "humann_fp": "humann",
         "kegg_fp": "kegg",
         "kegg_idx_fp":"keggRap",
@@ -46,10 +47,11 @@ def Aligner(config):
     return make_tool_from_config(tool_cls, config)
 
 class _Aligner(object):
-    def __init__(self, search_method, kegg_fp, num_threads):
+    def __init__(self, search_method, kegg_fp, num_threads, seqtk_fp):
         self.search_method = search_method
         self.kegg_fp = kegg_fp
         self.num_threads = num_threads
+        self.seqtk_fp = seqtk_fp
 
     @classmethod
     def get_argnames(cls):
@@ -57,7 +59,7 @@ class _Aligner(object):
 
     def fastq_to_fasta(self, filename):
         fasta = tempfile.NamedTemporaryFile()
-        command = ["seqtk", "seq", "-a", filename]
+        command = [self.seqtk_fp, "seq", "-a", filename]
         subprocess.check_call(command, stdout=fasta, stderr=subprocess.STDOUT)
         return fasta
 
@@ -75,8 +77,8 @@ class _Aligner(object):
         return self._fix_output_fp(output_fp)
 
 class Blast(_Aligner):
-   def __init__(self, search_method, kegg_fp, num_threads):
-       super(Blast, self).__init__(search_method, kegg_fp, num_threads)
+   def __init__(self, search_method, kegg_fp, num_threads, seqtk_fp):
+       super(Blast, self).__init__(search_method, kegg_fp, num_threads, seqtk_fp)
 
    def make_output_fp(self, out_dir, R):
        return os.path.join(out_dir, os.path.basename(os.path.splitext(R)[0]+'.blast'))
@@ -95,8 +97,8 @@ class Blast(_Aligner):
        return os.path.exists(self.kegg_fp)
 
 class RapSearch(_Aligner):
-    def __init__(self, search_method, kegg_fp, num_threads, kegg_idx_fp, rap_search_fp):
-        super(RapSearch, self).__init__(search_method, kegg_fp, num_threads)
+    def __init__(self, search_method, kegg_fp, num_threads, seqtk_fp, kegg_idx_fp, rap_search_fp):
+        super(RapSearch, self).__init__(search_method, kegg_fp, num_threads, seqtk_fp)
         self.kegg_idx_fp = kegg_idx_fp
         self.rap_search_fp = rap_search_fp
 
