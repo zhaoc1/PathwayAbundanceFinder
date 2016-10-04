@@ -155,7 +155,7 @@ K01938 formate--tetrahydrofolate ligase [EC:6.3.4.3]	0.5
 K10609 cullin 4	1.0
 K04257 olfactory receptor	1.0"""
 
-EXPECTED_SUMMARY = {"unique_prot_hits": 14, "mapped_sequences": 18, "ko_hits": 14, "unique_ko_hits": 16, "mapped_sequences_evalue": 16}
+EXPECTED_SUMMARY = {"unique_prot_hits": 14, "mapped_sequences": 16, "ko_hits": 14, "unique_ko_hits": 16, "mapped_sequences_evalue": 16}
 
 
 MOCK_NO_MATCH_R1 = """\
@@ -206,7 +206,7 @@ BBCBBGGGEGGGGGGGGBGGFCGGGDGGGFGGGG:/9CEGG@GCGD<EGBD@EDGGG<DB0;@CDGGEGGGGG<@DDDGC
 
 EXPECTED_NO_MATCH_OUTPUT = "KO	ko_abundance"
 
-EXPECTED_NO_MATCH_SUMMARY = {"unique_prot_hits": 0, "mapped_sequences": 3, "ko_hits": 0, "unique_ko_hits": 0, "mapped_sequences_evalue": 0}
+EXPECTED_NO_MATCH_SUMMARY = {"unique_prot_hits": 0, "mapped_sequences": 0, "ko_hits": 0, "unique_ko_hits": 0, "mapped_sequences_evalue": 0}
 
 # data to test the kegg2ko index code. Tests for:
 # Protein to a single K0 prefix

@@ -110,7 +110,7 @@ class RapSearch(_Aligner):
             self.rap_search_fp, "-q", R,
             "-d", self.kegg_idx_fp,
             "-o", output_fp, "-v", "1", "-b", "1",
-            "-z", str(self.num_threads), "-s", "f"
+            "-z", str(self.num_threads) #, "-s", "f"
             ]
 
     def make_index(self):
@@ -204,7 +204,9 @@ class BestHit(_Assigner):
         if self.search_method.lower() == "blastx":
             return pandas.read_csv(alignment_fp, sep='\t', header=None, names=colNames, usecols=[0,1,2,10])
         else: # for rapsearch
-            return pandas.read_csv(alignment_fp, sep='\t', skiprows=4, usecols=colNames)
+            p = pandas.read_csv(alignment_fp, sep='\t', skiprows=5, names=colNames, usecols=[0,1,2,10])
+            p['e-value'] = pow(10, p['e-value'])
+            return p
     
     def _getBestHit(self, alignment):
         "Finds the best match that passes an e-value threshold."
