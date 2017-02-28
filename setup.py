@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-from distutils.core import setup
+#from distutils.core import setup
+from setuptools import setup
 
 # Get version number from package
 exec(open('pathfinderlib/version.py').read())

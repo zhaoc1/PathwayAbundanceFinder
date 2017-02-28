@@ -18,7 +18,7 @@ class PathfinderTest(unittest.TestCase):
     def ko_fp_from_aln(self, r1_name):
         return os.path.join(self.output_dir, os.path.basename(os.path.splitext(r1_name)[0]+'.ko'))
 
-    def run_pipeline(self, R1, R2, config_file):
+    def run_pipeline(self, R1, R2):#, config_file
         r1 = tempfile.NamedTemporaryFile(suffix=".fastq")
         r1.write(R1)
         r1.seek(0)
@@ -30,8 +30,8 @@ class PathfinderTest(unittest.TestCase):
             "--forward-reads", r1.name,
             "--reverse-reads", r2.name,
             "--summary-file", self.summary_fp,
-            "--output-dir", self.output_dir,
-            "--config-file", config_file.name
+            "--output-dir", self.output_dir
+            #"--config-file", config_file.name
             ]
 
         main(args)
@@ -50,21 +50,21 @@ class PathfinderTest(unittest.TestCase):
     def test_main_RAP_bestHit(self):
         #generate the correct config file
         self.config['mapping_method'] = 'best_hit'
-        config_file = tempfile.NamedTemporaryFile(suffix=".json")
-        json.dump(self.config, config_file)
-        config_file.seek(0)
+        #config_file = tempfile.NamedTemporaryFile(suffix=".json")
+        #json.dump(self.config, config_file)
+        #config_file.seek(0)
         
         # run the pipeline and check results
-        r1_name = self.run_pipeline(MOCK_R1, MOCK_R2, config_file)
+        r1_name = self.run_pipeline(MOCK_R1, MOCK_R2)#, config_file
         self.check_results(self.ko_fp_from_aln(r1_name), self.summary_fp, EXPECTED_OUTPUT, EXPECTED_SUMMARY)
 
     def test_empty_alignment(self):
-        config_file = tempfile.NamedTemporaryFile(suffix=".json")
-        json.dump(self.config, config_file)
-        config_file.seek(0)
+        #config_file = tempfile.NamedTemporaryFile(suffix=".json")
+        #json.dump(self.config, config_file)
+        #config_file.seek(0)
 
         # run the pipeline and check results
-        r1_name = self.run_pipeline(MOCK_NO_MATCH_R1, MOCK_NO_MATCH_R2, config_file)
+        r1_name = self.run_pipeline(MOCK_NO_MATCH_R1, MOCK_NO_MATCH_R2)#, config_file
         self.check_results(self.ko_fp_from_aln(r1_name), self.summary_fp, EXPECTED_NO_MATCH_OUTPUT, EXPECTED_NO_MATCH_SUMMARY)
 
     def test_make_index_bestHit(self):
@@ -85,6 +85,8 @@ class PathfinderTest(unittest.TestCase):
         observed = open(self.config["kegg_to_ko_fp"]).read()
         self.assertEqual(observed.strip(), KEGG_TO_KO.strip())
 
+if __name__ == "__main__":
+    unittest.main()
 
 # get known sequences from KEGG to test the cases:
 # a sequence having no hits in the kegg database (s0)

@@ -10,6 +10,7 @@ from Bio import SeqIO
 
 from pathfinderlib.version import __version__
 
+"""
 def get_config(user_config_file):
     config ={
         "seqtk_fp": "seqtk",
@@ -32,6 +33,22 @@ def get_config(user_config_file):
     if user_config_file is not None:
         user_config = json.load(user_config_file)
         config.update(user_config)
+
+    return config
+
+"""
+def get_config(args):
+    config = {
+        "seqtk_fp":args.seqtk_fp,
+        "kegg_fp": args.kegg_fp,
+        "kegg_idx_fp":args.kegg_idx_fp,
+        "kegg_to_ko_fp":args.kegg_to_ko_fp,
+        "rap_search_fp":args.rap_search_fp,
+        "search_method":args.search_method,
+        "mapping_method":args.mapping_method,
+        "evalue_cutoff":args.evalue_cutoff,
+        "num_threads":args.threads
+    }
     return config
 
 def make_tool_from_config(tool_cls, config):
@@ -124,7 +141,6 @@ class RapSearch(_Aligner):
     def index_exists(self):
         return os.path.exists(self.kegg_idx_fp)
 
-
 def Assigner(config):
     tool_cls = mapping_methods_available[config["mapping_method"]]
     return make_tool_from_config(tool_cls, config)
@@ -179,7 +195,7 @@ class Humann(_Assigner):
 
     def index_exists(self):
         return True
-        
+
 class BestHit(_Assigner):
     def __init__(self, mapping_method, search_method, evalue_cutoff, kegg_fp, kegg_to_ko_fp):
         super(BestHit, self).__init__(mapping_method, search_method, evalue_cutoff)
@@ -279,31 +295,58 @@ class BestHit(_Assigner):
 
     def index_exists(self):
         return os.path.exists(self.kegg_to_ko_fp)
-        
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Runs functional assignment.")
+
     parser.add_argument(
         "--forward-reads", required=True,
         type=argparse.FileType("r"),
-        help="R1.fastq")
+        help="FASTQ file of forward reads")
     parser.add_argument(
         "--reverse-reads", required=True,
         type=argparse.FileType("r"),
-        help="R2.fastq")
+        help="FASTQ file of reverse reads")
     parser.add_argument(
         "--summary-file", required=True,
         type=argparse.FileType("w"),
         help="Summary file")
     parser.add_argument(
         "--output-dir", required=True,
-        help="output directory")
+        help="Path to output directory")
     parser.add_argument(
-        "--config-file",
-        type=argparse.FileType("r"),
-        help="JSON configuration file")
+        "--kegg_fp",
+        help="Path to Kegg file")
+    parser.add_argument(
+        "--kegg_idx_fp",
+        help="Path to Kegg RAP Index file")
+    parser.add_argument(
+        "--kegg_to_ko_fp",
+        help="Path to Kegg to KO file")
+    parser.add_argument(
+        "--seqtk_fp", default="seqtk",
+        help="Path to seqtk (if using)")
+    parser.add_argument(
+        "--rap_search_fp", default="rapsearch",
+        help="Path to rapsearch (if using)")
+    parser.add_argument(
+        "--search_method", default="rapsearch",
+        help="Search method]")
+    parser.add_argument(
+        "--mapping_method", default="best_hit",
+        help="Search method]")
+    parser.add_argument(
+        "--threads", default=4,
+        type=int, help="Number of threads to use")
+    parser.add_argument(
+        "--evalue_cutoff",required=False,
+        type=float,default=0.001,
+        help="Evalue cutoff (default: %(default)s)")
+
     args = parser.parse_args(argv)
 
-    config = get_config(args.config_file)
+    config = get_config(args)
+
 
     fwd_fp = args.forward_reads.name
     rev_fp = args.reverse_reads.name
@@ -322,12 +365,13 @@ def main(argv=None):
 
     save_summary(args.summary_file, config, summary)
 
+
 def save_summary(f, config, data):
     result = {
         "program": "PathFinder",
         "version": __version__,
         "config": config,
-        "data":data
+        "data": data
         }
     json.dump(result, f)
 
@@ -339,7 +383,7 @@ def make_index_main(argv=None):
         help="JSON configuration file")
     args = p.parse_args(argv)
 
-    config = get_config(args.config_file)
+    config = get_config(args)
         
     searchApp = Aligner(config)
     if not searchApp.index_exists():
