@@ -75,14 +75,13 @@ class _Aligner(object):
         return inspect.getargspec(cls.__init__)[0][1:]
 
     def fastq_to_fasta(self, filename):
-        ## chunyu: if qsub, where does the temp file go? this is disturbing
-        #fasta = tempfile.NamedTemporaryFile()
-        fastafile = os.path.splitext(filename)[0] + ".fasta"
-        fasta = open(fastafile,"w")
+        fasta = tempfile.NamedTemporaryFile()
+        #fastafile = os.path.splitext(filename)[0] + ".fasta"
+        #fasta = open(fastafile,"w")
         command = [self.seqtk_fp, "seq", "-a", filename]
         subprocess.check_call(command, stdout=fasta, stderr=subprocess.STDOUT)
-        fasta.close()
-        return fastafile
+        #fasta.close()
+        return fasta
 
     def make_command(self, R, output):
         raise NotImplementedError("Create and override method in child tool")
@@ -93,7 +92,7 @@ class _Aligner(object):
     def run(self, R, out_dir):
         r_fasta = self.fastq_to_fasta(R)
         output_fp = self.make_output_fp(out_dir, R)
-        command = self.make_command(r_fasta, output_fp)
+        command = self.make_command(r_fasta.name, output_fp)
         subprocess.check_call(command, stderr=subprocess.STDOUT)
         return self._fix_output_fp(output_fp)
 
