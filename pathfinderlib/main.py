@@ -75,10 +75,14 @@ class _Aligner(object):
         return inspect.getargspec(cls.__init__)[0][1:]
 
     def fastq_to_fasta(self, filename):
-        fasta = tempfile.NamedTemporaryFile()
+        ## chunyu: if qsub, where does the temp file go? this is disturbing
+        #fasta = tempfile.NamedTemporaryFile()
+        fastafile = os.path.splitext(filename)[0] + ".fasta"
+        fasta = open(fastafile,"w")
         command = [self.seqtk_fp, "seq", "-a", filename]
         subprocess.check_call(command, stdout=fasta, stderr=subprocess.STDOUT)
-        return fasta
+        fasta.close()
+        return fastafile
 
     def make_command(self, R, output):
         raise NotImplementedError("Create and override method in child tool")
@@ -89,7 +93,7 @@ class _Aligner(object):
     def run(self, R, out_dir):
         r_fasta = self.fastq_to_fasta(R)
         output_fp = self.make_output_fp(out_dir, R)
-        command = self.make_command(r_fasta.name, output_fp)
+        command = self.make_command(r_fasta, output_fp)
         subprocess.check_call(command, stderr=subprocess.STDOUT)
         return self._fix_output_fp(output_fp)
 
@@ -344,9 +348,7 @@ def main(argv=None):
         help="Evalue cutoff (default: %(default)s)")
 
     args = parser.parse_args(argv)
-
     config = get_config(args)
-
 
     fwd_fp = args.forward_reads.name
     rev_fp = args.reverse_reads.name
@@ -362,7 +364,6 @@ def main(argv=None):
 
     assignerApp = Assigner(config)
     summary = assignerApp.run(alignment_R1_fp, alignment_R2_fp, args.output_dir)
-
     save_summary(args.summary_file, config, summary)
 
 
@@ -403,3 +404,5 @@ mapping_methods_available = {
     "best_hit": BestHit,
     "humann": Humann
     }
+
+#main()
